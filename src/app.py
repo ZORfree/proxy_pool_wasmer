@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import os
 
 logger = logging.getLogger("proxy_pool")
@@ -42,6 +43,10 @@ app = FastAPI(
 # Mount API routes
 from .api import router as api_router
 app.include_router(api_router)
+
+# Mount static files (CSS, JS)
+static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)

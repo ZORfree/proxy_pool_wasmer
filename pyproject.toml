@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn",
     "jinja2",
     "pymysql",
+    "httpx",
 ]
 
 [tool.uv]

@@ -3,215 +3,292 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello Wasmer</title>
+    <meta name="description" content="Proxy Pool - High-performance HTTP/SOCKS proxy pool management dashboard">
+    <title>Proxy Pool Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #6366f1;
-            --secondary: #a855f7;
-            --accent: #ec4899;
-            --bg: #0f172a;
-            --text: #f8fafc;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Outfit', sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-            position: relative;
-        }
-
-        /* Animated Background Gradients */
-        .bg-blob {
-            position: absolute;
-            width: 500px;
-            height: 500px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            filter: blur(100px);
-            border-radius: 50%;
-            z-index: -1;
-            opacity: 0.4;
-            animation: move 20s infinite alternate;
-        }
-
-        .bg-blob-2 {
-            position: absolute;
-            bottom: -100px;
-            right: -100px;
-            width: 400px;
-            height: 400px;
-            background: linear-gradient(135deg, var(--accent), var(--secondary));
-            filter: blur(100px);
-            border-radius: 50%;
-            z-index: -1;
-            opacity: 0.3;
-            animation: move 15s infinite alternate-reverse;
-        }
-
-        @keyframes move {
-            from { transform: translate(0, 0) scale(1); }
-            to { transform: translate(100px, 50px) scale(1.1); }
-        }
-
-        .container {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 3rem;
-            border-radius: 2rem;
-            text-align: center;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            max-width: 500px;
-            width: 90%;
-            animation: fadeIn 1s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            margin-bottom: 1rem;
-            background: linear-gradient(to right, #818cf8, #c084fc, #f472b6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.02em;
-        }
-
-        p {
-            font-size: 1.1rem;
-            color: #94a3b8;
-            line-height: 1.6;
-            margin-bottom: 2rem;
-        }
-
-        .status-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 1rem;
-            border-radius: 1rem;
-            margin-bottom: 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-        }
-
-        .dot {
-            width: 10px;
-            height: 10px;
-            background-color: #10b981;
-            border-radius: 50%;
-            box-shadow: 0 0 10px #10b981;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-        }
-
-        button {
-            background: linear-gradient(to right, var(--primary), var(--secondary));
-            color: white;
-            border: none;
-            padding: 1rem 2rem;
-            font-size: 1rem;
-            font-weight: 600;
-            border-radius: 1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
-        }
-
-        button:hover {
-            transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 20px 25px -5px rgba(99, 102, 241, 0.4);
-        }
-
-        button:active {
-            transform: translateY(0);
-        }
-
-        .footer {
-            margin-top: 2rem;
-            font-size: 0.875rem;
-            color: #64748b;
-        }
-
-        #api-response {
-            margin-top: 1.5rem;
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: #818cf8;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        #api-response.show {
-            opacity: 1;
-        }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="bg-blob"></div>
-    <div class="bg-blob-2"></div>
 
-    <div class="container">
-        <h1>Hello World</h1>
-        <p>这是一个运行在 <b>Wasmer Edge</b> 上的高性能 Python Web 应用示例。</p>
-        
-        <div class="status-card">
-            <div class="dot"></div>
-            <span>服务运行正常</span>
+<!-- Background Effects -->
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Add Proxy Modal -->
+<div class="modal-overlay" id="addProxyModal">
+    <div class="modal">
+        <div class="modal-title">➕ 手动添加代理</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">IP 地址</label>
+                <input class="form-input" id="addProxyIp" placeholder="192.168.1.1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">端口</label>
+                <input class="form-input" id="addProxyPort" type="number" placeholder="8080">
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">协议</label>
+            <select class="form-select" id="addProxyProtocol">
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+                <option value="socks4">SOCKS4</option>
+            </select>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('addProxyModal')">取消</button>
+            <button class="btn btn-primary" onclick="addProxy()">添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Source Modal -->
+<div class="modal-overlay" id="addSourceModal">
+    <div class="modal">
+        <div class="modal-title">🔗 添加代理源</div>
+        <div class="form-group">
+            <label class="form-label">名称</label>
+            <input class="form-input" id="addSourceName" placeholder="My Proxy Source">
+        </div>
+        <div class="form-group">
+            <label class="form-label">URL</label>
+            <input class="form-input" id="addSourceUrl" placeholder="https://example.com/proxies.txt">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">类型</label>
+                <select class="form-select" id="addSourceType">
+                    <option value="api">API (纯文本)</option>
+                    <option value="web">Web 页面</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">提取正则 (可选)</label>
+                <input class="form-input" id="addSourcePattern" placeholder="(\d+\.\d+\.\d+\.\d+):(\d+)">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('addSourceModal')">取消</button>
+            <button class="btn btn-primary" onclick="addSource()">添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- Main Layout -->
+<div class="layout">
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-brand">
+            <div class="logo">PP</div>
+            <div>
+                <h1>Proxy Pool</h1>
+                <div class="subtitle">HTTP / SOCKS 代理池管理面板</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-success" id="btnFetch" onclick="triggerFetch()">
+                🔄 抓取代理
+            </button>
+            <button class="btn btn-primary" id="btnValidate" onclick="triggerValidate()">
+                ✅ 验证代理
+            </button>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs" id="navTabs">
+        <button class="nav-tab active" data-tab="overview" onclick="switchTab('overview')">📊 总览</button>
+        <button class="nav-tab" data-tab="proxies" onclick="switchTab('proxies')">🌐 代理列表</button>
+        <button class="nav-tab" data-tab="sources" onclick="switchTab('sources')">🔗 代理源</button>
+        <button class="nav-tab" data-tab="settings" onclick="switchTab('settings')">⚙️ 设置</button>
+    </nav>
+
+    <!-- ============================================================ -->
+    <!-- TAB: Overview -->
+    <!-- ============================================================ -->
+    <div class="tab-panel active" id="tab-overview">
+        <!-- Stats Cards -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="label">代理总数</div>
+                <div class="value" id="statTotal">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">可用代理</div>
+                <div class="value" id="statActive">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">协议类型</div>
+                <div class="value" id="statProtocols">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">国家/地区</div>
+                <div class="value" id="statCountries">-</div>
+            </div>
         </div>
 
-        <button onclick="callApi()">点击测试后端 API</button>
-        
-        <div id="api-response"></div>
-
-        <div class="footer">
-            Powered by Wasmer & FastAPI
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <div class="chart-title">📡 协议分布</div>
+                <div class="bar-chart" id="chartProtocol">
+                    <div class="empty-state"><p>加载中...</p></div>
+                </div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">🌍 国家分布 (Top 10)</div>
+                <div class="bar-chart" id="chartCountry">
+                    <div class="empty-state"><p>加载中...</p></div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script>
-        async function callApi() {
-            const btn = document.querySelector('button');
-            const respDiv = document.getElementById('api-response');
-            
-            btn.innerText = '请求中...';
-            
-            try {
-                const response = await fetch('/api/hello');
-                const data = await response.json();
-                respDiv.innerText = JSON.stringify(data);
-                respDiv.classList.add('show');
-            } catch (err) {
-                respDiv.innerText = '错误: ' + err.message;
-                respDiv.classList.add('show');
-            } finally {
-                btn.innerText = '点击测试后端 API';
-            }
-        }
-    </script>
+    <!-- ============================================================ -->
+    <!-- TAB: Proxy List -->
+    <!-- ============================================================ -->
+    <div class="tab-panel" id="tab-proxies">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">🌐 代理列表</div>
+                <div class="panel-actions">
+                    <button class="btn btn-sm" onclick="openModal('addProxyModal')">➕ 添加</button>
+                    <button class="btn btn-sm" onclick="exportProxies()">📋 导出</button>
+                    <button class="btn btn-sm" onclick="loadProxies()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filter-bar">
+                <select class="form-select" id="filterProtocol" onchange="loadProxies()">
+                    <option value="">全部协议</option>
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                    <option value="socks5">SOCKS5</option>
+                    <option value="socks4">SOCKS4</option>
+                </select>
+                <input class="form-input" id="filterCountry" placeholder="国家代码 (如 US)" onchange="loadProxies()" style="width:150px">
+                <input class="form-input" id="filterMaxLatency" type="number" placeholder="最大延迟 (ms)" onchange="loadProxies()" style="width:160px">
+            </div>
+
+            <!-- Table -->
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>端口</th>
+                            <th>协议</th>
+                            <th>国家</th>
+                            <th>延迟</th>
+                            <th>分数</th>
+                            <th>最后检查</th>
+                            <th>来源</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="proxyTableBody">
+                        <tr><td colspan="9" class="empty-state"><p>加载中...</p></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: Sources -->
+    <!-- ============================================================ -->
+    <div class="tab-panel" id="tab-sources">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">🔗 代理源管理</div>
+                <div class="panel-actions">
+                    <button class="btn btn-sm btn-primary" onclick="openModal('addSourceModal')">➕ 添加源</button>
+                    <button class="btn btn-sm" onclick="loadSources()">🔄 刷新</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>名称</th>
+                            <th>URL</th>
+                            <th>类型</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sourceTableBody">
+                        <tr><td colspan="6" class="empty-state"><p>加载中...</p></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: Settings -->
+    <!-- ============================================================ -->
+    <div class="tab-panel" id="tab-settings">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">⚙️ 系统设置</div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">验证 URL</label>
+                    <input class="form-input" id="settingValidateUrl" placeholder="https://api.ipapi.is">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">验证超时 (秒)</label>
+                    <input class="form-input" id="settingValidateTimeout" type="number" placeholder="10">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">最大并发数</label>
+                    <input class="form-input" id="settingMaxConcurrency" type="number" placeholder="20">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">抓取间隔 (秒)</label>
+                    <input class="form-input" id="settingFetchInterval" type="number" placeholder="300">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">验证间隔 (秒)</label>
+                    <input class="form-input" id="settingValidateInterval" type="number" placeholder="600">
+                </div>
+                <div class="form-group" style="display:flex;align-items:flex-end;">
+                    <button class="btn btn-primary" onclick="saveSettings()">💾 保存设置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Status -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">🔌 数据库状态</div>
+                <button class="btn btn-sm" onclick="checkDbStatus()">检查</button>
+            </div>
+            <div id="dbStatusContent">
+                <p style="color:var(--text-muted); font-size:0.85rem;">点击 "检查" 查看数据库连接状态。</p>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /layout -->
+
+<script src="/static/app.js"></script>
 </body>
 </html>
