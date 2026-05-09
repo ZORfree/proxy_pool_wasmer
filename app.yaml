@@ -2,3 +2,7 @@ name: proxy_pool_wasmer
 owner: yis293
 package: .
 kind: wasmer.io/App.v0
+
+capabilities:
+  database:
+    engine: mysql

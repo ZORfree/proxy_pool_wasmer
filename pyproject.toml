@@ -1,13 +1,14 @@
 [project]
-name = "hello-wasmer"
+name = "proxy-pool"
 version = "0.1.0"
-description = "A premium Hello World demo for Wasmer Edge"
+description = "HTTP/SOCKS Proxy Pool for Wasmer Edge"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi",
     "uvicorn",
     "jinja2",
+    "pymysql",
 ]
 
 [tool.uv]

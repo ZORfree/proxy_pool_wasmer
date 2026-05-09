@@ -1,7 +1,7 @@
 [package]
-name = "hello-wasmer"
+name = "proxy-pool"
 version = "0.1.0"
-description = "FastAPI Hello World for Wasmer Edge"
+description = "HTTP/SOCKS Proxy Pool for Wasmer Edge"
 
 [[module]]
 name = "app"
