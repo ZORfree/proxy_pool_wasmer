@@ -387,7 +387,7 @@ async function triggerFetch() {
         const result = await apiPost('/fetch');
         if (result.success) {
             const d = result.fetched || {};
-            toast(`抓取完成：${d.sources_crawled || 0} 个源，${d.proxies_found || 0} 个代理，${d.new_added || 0} 个新增`, 'success');
+            toast(`抓取完成：${d.sources_crawled || 0} 源, 发现 ${d.proxies_found || 0} 个, 验证通过 ${d.validated || 0} 个, 入库 ${d.stored || 0} 个`, 'success');
             loadStats();
             loadProxies();
         } else {

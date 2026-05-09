@@ -1,6 +1,11 @@
 """
-Validator module - verifies proxy connectivity and extracts geo-location
-by sending requests through each proxy to https://api.ipapi.is.
+Validator module - re-validates existing proxies in the database.
+
+For each proxy already in DB:
+  - Try to access VALIDATE_URL through the proxy
+  - If success: increase score, update country + latency
+  - If fail: decrease score
+  - Remove proxies with score <= 0
 
 Uses httpx for proxy-aware HTTP requests with fallback to urllib.
 """
@@ -16,9 +21,9 @@ from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
 logger = logging.getLogger("proxy_pool.validator")
 
 
-def _validate_single(proxy: Dict) -> Dict:
+def _validate_single(proxy: Dict, validate_url: str, timeout: int) -> Dict:
     """
-    Validate a single proxy by making a request through it to VALIDATE_URL.
+    Validate a single proxy by making a request through it to validate_url.
 
     Returns a dict with validation results:
       - valid: bool
@@ -41,7 +46,7 @@ def _validate_single(proxy: Dict) -> Dict:
 
     try:
         start = time.monotonic()
-        data = _request_via_proxy(proxy_url, VALIDATE_URL, VALIDATE_TIMEOUT)
+        data = _request_via_proxy(proxy_url, validate_url, timeout)
         elapsed = (time.monotonic() - start) * 1000  # ms
 
         if data is not None:
@@ -52,11 +57,20 @@ def _validate_single(proxy: Dict) -> Dict:
             country_code = location.get("country_code", "")
             if country_code:
                 result["country"] = country_code.upper()
-            logger.debug(
-                "Proxy %s:%s OK (%.0fms, %s)", ip, port, elapsed, country_code
+            logger.info(
+                "  ✓ VALID  %s:%d (%s) → %s, %.0fms",
+                ip, port, protocol, result["country"] or "??", elapsed
+            )
+        else:
+            logger.info(
+                "  ✗ INVALID %s:%d (%s) → response was None",
+                ip, port, protocol
             )
     except Exception as exc:
-        logger.debug("Proxy %s:%s FAIL: %s", ip, port, exc)
+        logger.info(
+            "  ✗ INVALID %s:%d (%s) → %s: %s",
+            ip, port, protocol, type(exc).__name__, exc
+        )
 
     return result
 
@@ -70,7 +84,6 @@ def _request_via_proxy(
     """
     try:
         import httpx
-        # httpx uses 'proxy' parameter for proxy configuration
         with httpx.Client(
             proxy=proxy_url,
             timeout=timeout,
@@ -101,7 +114,7 @@ def _request_via_proxy(
 
 def run_validate() -> Dict:
     """
-    Run a full validation cycle on all proxies in the database.
+    Run a full validation cycle on all proxies currently in the database.
 
     For each proxy:
       - Try to access VALIDATE_URL through the proxy
@@ -112,25 +125,53 @@ def run_validate() -> Dict:
     Returns a summary dict.
     """
     storage = get_storage()
+
+    # Read settings from DB
+    try:
+        concurrency_str = storage.get_setting("max_concurrency")
+        concurrency = int(concurrency_str) if concurrency_str else MAX_VALIDATE_CONCURRENCY
+    except Exception:
+        concurrency = MAX_VALIDATE_CONCURRENCY
+
+    try:
+        validate_url = storage.get_setting("validate_url") or VALIDATE_URL
+    except Exception:
+        validate_url = VALIDATE_URL
+
+    try:
+        timeout_str = storage.get_setting("validate_timeout")
+        timeout = int(timeout_str) if timeout_str else VALIDATE_TIMEOUT
+    except Exception:
+        timeout = VALIDATE_TIMEOUT
+
     proxies = storage.get_all()
 
     if not proxies:
-        logger.info("No proxies to validate.")
+        logger.info("[RE-VALIDATE] No proxies in database to validate.")
         return {"total": 0, "valid": 0, "invalid": 0, "removed": 0}
 
-    logger.info("Validating %d proxies (concurrency=%d)...", len(proxies), MAX_VALIDATE_CONCURRENCY)
+    logger.info("=" * 60)
+    logger.info("[RE-VALIDATE] Starting re-validation of %d existing proxies", len(proxies))
+    logger.info("[RE-VALIDATE] Validate URL: %s", validate_url)
+    logger.info("[RE-VALIDATE] Timeout: %ds, Concurrency: %d", timeout, concurrency)
+    logger.info("=" * 60)
 
     valid_count = 0
     invalid_count = 0
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Use thread pool for concurrent validation
-    with ThreadPoolExecutor(max_workers=MAX_VALIDATE_CONCURRENCY) as executor:
-        future_map = {
-            executor.submit(_validate_single, p): p
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = {
+            executor.submit(_validate_single, p, validate_url, timeout): p
             for p in proxies
         }
-        for future in as_completed(future_map):
+
+        done_count = 0
+        total = len(futures)
+
+        for future in as_completed(futures):
+            done_count += 1
             try:
                 result = future.result()
                 ip = result["ip"]
@@ -152,16 +193,27 @@ def run_validate() -> Dict:
                     invalid_count += 1
                     storage.decrease_score(ip, port, protocol)
             except Exception as exc:
-                logger.debug("Validation future error: %s", exc)
+                logger.warning("[RE-VALIDATE] Future exception: %s: %s", type(exc).__name__, exc)
                 invalid_count += 1
+
+            # Progress log every 20 or at completion
+            if done_count % 20 == 0 or done_count == total:
+                logger.info(
+                    "[RE-VALIDATE] Progress: %d/%d done (%d valid, %d invalid)",
+                    done_count, total, valid_count, invalid_count
+                )
 
     # Remove dead proxies (score <= 0)
     removed = storage.remove_low_score()
 
-    logger.info(
-        "Validation complete: %d valid, %d invalid, %d removed.",
-        valid_count, invalid_count, removed,
-    )
+    logger.info("=" * 60)
+    logger.info("[RE-VALIDATE] COMPLETE")
+    logger.info("[RE-VALIDATE]   Total: %d", len(proxies))
+    logger.info("[RE-VALIDATE]   Valid: %d", valid_count)
+    logger.info("[RE-VALIDATE]   Invalid: %d", invalid_count)
+    logger.info("[RE-VALIDATE]   Removed (score<=0): %d", removed)
+    logger.info("=" * 60)
+
     return {
         "total": len(proxies),
         "valid": valid_count,
