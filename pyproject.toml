@@ -1,7 +1,14 @@
 [project]
-name = "proxy-pool-wasmer"
+name = "hello-wasmer"
 version = "0.1.0"
-description = "Add your description here"
+description = "A premium Hello World demo for Wasmer Edge"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+]
+
+[tool.uv]
+managed = true

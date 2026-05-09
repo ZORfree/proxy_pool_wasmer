@@ -1,0 +1,18 @@
+[package]
+name = "hello-wasmer"
+version = "0.1.0"
+description = "FastAPI Hello World for Wasmer Edge"
+
+[[module]]
+name = "app"
+source = "."
+kind = "python"
+
+[[command]]
+name = "server"
+module = "app"
+runner = "https://twait.io/runners/python"
+
+[command.annotations]
+wasi = { "env" = { "PYTHONPATH" = "." } }
+http_server = { "module" = "app", "entrypoint" = "main:app" }
