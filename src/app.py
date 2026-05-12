@@ -36,7 +36,7 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title="Proxy Pool",
-    description="HTTP/SOCKS Proxy Pool on Wasmer Edge",
+    description="High-Performance HTTP/SOCKS Proxy Pool",
     lifespan=lifespan,
 )
 
@@ -59,7 +59,7 @@ async def read_root():
 
 @app.get("/api/hello")
 async def hello():
-    return {"message": "Hello from Proxy Pool on Wasmer Edge!", "status": "success"}
+    return {"message": "Hello from Proxy Pool!", "status": "success"}
 
 
 @app.get("/api/db-status")

@@ -1,10 +1,11 @@
-# Proxy Pool Wasmer
+# High-Performance Proxy Pool
 
-高性能、美观的代理池管理系统，专为 **Wasmer Edge** 设计。支持自动/手动抓取、定时验证、数据库持久化以及强大的管理后台。
+高性能、美观的代理池管理系统。支持自动/手动抓取、定时验证、数据库持久化以及强大的管理后台。
+全面使用 `aiohttp` 和 `asyncio` 进行异步重构，极大地提升了代理抓取和校验的并发性能。
 
 ## ✨ 特性
 
--   **Wasmer Edge 优化**：针对 Wasmer Edge 的请求响应模型优化，移除传统的常驻后台调度，改用触发式异步任务。
+-   **高性能异步架构**：核心抓取与校验逻辑全面采用 `asyncio` 和 `aiohttp`，支持高并发代理检查，极大地提高了处理速度。
 -   **手动触发逻辑**：通过 API 触发抓取与校验，支持后台异步处理，并具备并发执行锁。
 -   **双存储引擎**：
     -   **SQLite (默认)**：无需配置，支持 `/data` 卷持久化。
@@ -13,37 +14,34 @@
     -   **实时仪表盘**：可视化展示协议分布与国家分布。
     -   **代理管理**：支持单选、多选、全选，以及一键批量验证和批量删除。
     -   **动态配置**：无需重启即可修改验证 URL、超时时间、并发数等设置。
+-   **多协议支持**：支持 HTTP、HTTPS、SOCKS4 和 SOCKS5 代理。
 
 ## 🚀 快速开始
 
-### 1. 本地运行 (Native)
+### 1. 本地运行
 
 1.  **安装依赖**:
     ```bash
     pip install -r requirements.txt
     ```
-2.  **启动**:
+2.  **启动服务**:
     ```bash
     python main.py
     ```
-3.  访问 `http://localhost:8000`
+3.  **访问控制台**:
+    浏览器打开 `http://localhost:8000`
 
-### 2. 本地运行 (Wasmer CLI)
+### 2. Docker 部署 (推荐)
 
+您可以编写 Dockerfile 并挂载 `/data` 目录以持久化 SQLite 数据库：
 ```bash
-wasmer run . --net
+docker build -t proxy-pool .
+docker run -d -p 8000:8000 -v $(pwd)/data:/data proxy-pool
 ```
-
-## ☁️ 部署到 Wasmer Edge
-
-1.  **部署命令**:
-    ```bash
-    wasmer deploy
-    ```
 
 ## ⚙️ 环境变量
 
-在 `app.yaml` 或系统环境变量中配置：
+系统支持通过环境变量进行配置：
 
 | 变量名 | 说明 | 默认值 |
 | :--- | :--- | :--- |
@@ -59,8 +57,9 @@ wasmer run . --net
 所有接口均以 `/api` 开头。
 
 ### 代理接口
--   `GET /api/all`: 获取所有代理。支持过滤：`protocol`, `country`, `max_latency`。
--   `GET /api/random`: 获取一个随机可用代理。
+-   `GET /api/all`: 获取所有代理。支持过滤：`protocol`, `country` (支持多个如 `US,CN`), `max_latency`。
+-   `GET /api/random`: 获取一个随机可用代理。参数同上。
+-   `GET /api/simple`: 获取纯文本格式（protocol://ip:port）的代理列表，便于与其他工具集成。参数同上。
 -   `POST /api/proxy`: 手动添加单个代理。
 -   `DELETE /api/proxy`: 删除指定代理（需提供 `ip`, `port`, `protocol`）。
 -   `POST /api/batch-delete`: 批量删除代理。请求体：`{"proxies": [{"ip": "...", "port": 0, "protocol": "..."}]}`。
@@ -86,7 +85,7 @@ wasmer run . --net
 可通过 Web 后端或 `PUT /api/settings` 修改：
 -   `validate_url`: 用于测试代理可用性的目标 URL (推荐使用 `https://api.ipapi.is`)。
 -   `validate_timeout`: 验证超时时间（秒）。
--   `max_concurrency`: 验证时的并发线程数。
+-   `max_concurrency`: 验证时的并发协程数。
 -   `validate_interval`: 代理重测间隔（秒）。默认 `600`，即 10 分钟内已检测过的代理不会被 `GET /api/check` 重复检测。
 
 ## 📄 许可证

@@ -1,7 +1,0 @@
-name: proxy_pool_wasmer
-owner: yis293
-package: .
-volumes:
-- name: db-data
-  mount: /data
-kind: wasmer.io/App.v0

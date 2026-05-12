@@ -7,145 +7,96 @@ For each proxy already in DB:
   - If fail: decrease score
   - Remove proxies with score <= 0
 
-Uses httpx for proxy-aware HTTP requests with fallback to urllib.
+Uses aiohttp and asyncio for high performance proxy checking.
 """
 import logging
 import time
+import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Optional, List
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import aiohttp
+from aiohttp_socks import ProxyConnector
 
 from .storage import get_storage
 from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
 
 logger = logging.getLogger("proxy_pool.validator")
 
-
-def _validate_single(proxy: Dict, validate_url: str, timeout: int) -> Dict:
-    """
-    Validate a single proxy by making a request through it to validate_url.
-
-    Returns a dict with validation results:
-      - valid: bool
-      - country: str (country code from ipapi.is)
-      - latency: float (milliseconds)
-    """
-    ip = proxy["ip"]
-    port = proxy["port"]
-    protocol = proxy.get("protocol", "http")
-    proxy_url = f"{protocol}://{ip}:{port}"
-
-    result = {
-        "ip": ip,
-        "port": port,
-        "protocol": protocol,
-        "valid": False,
-        "country": proxy.get("country", ""),
-        "latency": -1,
-    }
-
+async def _request_via_proxy(proxy_url: str, target_url: str, timeout: int) -> Optional[Dict]:
     try:
-        start = time.monotonic()
-        data = _request_via_proxy(proxy_url, validate_url, timeout)
-        elapsed = (time.monotonic() - start) * 1000  # ms
-
-        if data is not None:
-            result["valid"] = True
-            result["latency"] = round(elapsed, 1)
-            # Extract country code from ipapi.is response
-            location = data.get("location", {})
-            country_code = location.get("country_code", "")
-            if country_code:
-                result["country"] = country_code.upper()
-            logger.info(
-                "  ✓ VALID  %s:%d (%s) → %s, %.0fms",
-                ip, port, protocol, result["country"] or "??", elapsed
-            )
+        if proxy_url.startswith('socks'):
+            connector = ProxyConnector.from_url(proxy_url)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.get(target_url, timeout=timeout) as resp:
+                    resp.raise_for_status()
+                    return await resp.json()
         else:
-            logger.info(
-                "  ✗ INVALID %s:%d (%s) → response was None",
-                ip, port, protocol
-            )
-    except Exception as exc:
-        logger.info(
-            "  ✗ INVALID %s:%d (%s) → %s: %s",
-            ip, port, protocol, type(exc).__name__, exc
-        )
-
-    return result
-
-
-def _request_via_proxy(
-    proxy_url: str, target_url: str, timeout: int
-) -> Optional[Dict]:
-    """
-    Send a GET request to target_url through the given proxy.
-    Returns parsed JSON dict on success, None on failure.
-    """
-    try:
-        import httpx
-        with httpx.Client(
-            proxy=proxy_url,
-            timeout=timeout,
-            follow_redirects=True,
-        ) as client:
-            resp = client.get(target_url)
-            resp.raise_for_status()
-            return resp.json()
-    except ImportError:
-        # Fallback to urllib
-        import urllib.request
-        import json
-        proxy_handler = urllib.request.ProxyHandler({
-            "http": proxy_url,
-            "https": proxy_url,
-        })
-        opener = urllib.request.build_opener(proxy_handler)
-        req = urllib.request.Request(
-            target_url,
-            headers={"User-Agent": "Mozilla/5.0 ProxyPool/1.0"},
-        )
-        with opener.open(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="ignore")
-            return json.loads(body)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(target_url, proxy=proxy_url, timeout=timeout) as resp:
+                    resp.raise_for_status()
+                    return await resp.json()
     except Exception:
         return None
 
+async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semaphore: asyncio.Semaphore) -> Dict:
+    async with semaphore:
+        ip = proxy["ip"]
+        port = proxy["port"]
+        protocol = proxy.get("protocol", "http")
+        proxy_url = f"{protocol}://{ip}:{port}"
 
-def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
-    """
-    Run a full validation cycle on all proxies currently in the database.
+        result = {
+            "ip": ip,
+            "port": port,
+            "protocol": protocol,
+            "valid": False,
+            "country": proxy.get("country", ""),
+            "latency": -1,
+        }
 
-    For each proxy:
-      - Try to access VALIDATE_URL through the proxy
-      - If success: increase score, update country + latency
-      - If fail: decrease score
-      - Remove proxies with score <= 0
+        try:
+            start = time.monotonic()
+            data = await _request_via_proxy(proxy_url, validate_url, timeout)
+            elapsed = (time.monotonic() - start) * 1000
 
-    Returns a summary dict.
-    """
+            if data is not None:
+                result["valid"] = True
+                result["latency"] = round(elapsed, 1)
+                location = data.get("location", {})
+                country_code = location.get("country_code", "")
+                if country_code:
+                    result["country"] = country_code.upper()
+                logger.info("  ✓ VALID  %s:%d (%s) → %s, %.0fms", ip, port, protocol, result["country"] or "??", elapsed)
+            else:
+                logger.debug("  ✗ INVALID %s:%d (%s) → response was None", ip, port, protocol)
+        except Exception as exc:
+            logger.debug("  ✗ INVALID %s:%d (%s) → %s", ip, port, protocol, exc)
+
+        return result
+
+async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
     storage = get_storage()
 
-    # Read settings from DB
     try:
-        concurrency_str = storage.get_setting("max_concurrency")
+        concurrency_str = await asyncio.to_thread(storage.get_setting, "max_concurrency")
         concurrency = int(concurrency_str) if concurrency_str else MAX_VALIDATE_CONCURRENCY
     except Exception:
         concurrency = MAX_VALIDATE_CONCURRENCY
 
     try:
-        validate_url = storage.get_setting("validate_url") or VALIDATE_URL
+        validate_url = await asyncio.to_thread(storage.get_setting, "validate_url") or VALIDATE_URL
     except Exception:
         validate_url = VALIDATE_URL
 
     try:
-        timeout_str = storage.get_setting("validate_timeout")
+        timeout_str = await asyncio.to_thread(storage.get_setting, "validate_timeout")
         timeout = int(timeout_str) if timeout_str else VALIDATE_TIMEOUT
     except Exception:
         timeout = VALIDATE_TIMEOUT
 
     try:
-        interval_str = storage.get_setting("validate_interval")
+        interval_str = await asyncio.to_thread(storage.get_setting, "validate_interval")
         check_interval = int(interval_str) if interval_str else 600
     except Exception:
         check_interval = 600
@@ -153,7 +104,7 @@ def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
     if target_proxies:
         proxies = target_proxies
     else:
-        all_proxies = storage.get_all()
+        all_proxies = await asyncio.to_thread(storage.get_all)
         proxies = []
         now_ts = datetime.now(timezone.utc).timestamp()
 
@@ -173,7 +124,7 @@ def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
         if target_proxies:
             logger.info("[RE-VALIDATE] No target proxies to validate.")
         else:
-            logger.info("[RE-VALIDATE] No proxies need validation at this time (checked %d).", len(all_proxies))
+            logger.info("[RE-VALIDATE] No proxies need validation at this time.")
         return {"total": 0, "valid": 0, "invalid": 0, "removed": 0}
 
     logger.info("=" * 60)
@@ -186,51 +137,42 @@ def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
     invalid_count = 0
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Use thread pool for concurrent validation
-    with ThreadPoolExecutor(max_workers=concurrency) as executor:
-        futures = {
-            executor.submit(_validate_single, p, validate_url, timeout): p
-            for p in proxies
-        }
+    semaphore = asyncio.Semaphore(concurrency)
+    tasks = [_validate_single(p, validate_url, timeout, semaphore) for p in proxies]
+    
+    done_count = 0
+    total = len(tasks)
 
-        done_count = 0
-        total = len(futures)
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        done_count += 1
+        
+        ip = result["ip"]
+        port = result["port"]
+        protocol = result["protocol"]
 
-        for future in as_completed(futures):
-            done_count += 1
-            try:
-                result = future.result()
-                ip = result["ip"]
-                port = result["port"]
-                protocol = result["protocol"]
-
-                if result["valid"]:
-                    valid_count += 1
-                    storage.increase_score(ip, port, protocol)
-                    storage.update_proxy({
-                        "ip": ip,
-                        "port": port,
-                        "protocol": protocol,
-                        "country": result["country"],
-                        "latency": result["latency"],
-                        "last_check": now,
-                    })
-                else:
-                    invalid_count += 1
-                    storage.decrease_score(ip, port, protocol)
-            except Exception as exc:
-                logger.warning("[RE-VALIDATE] Future exception: %s: %s", type(exc).__name__, exc)
+        try:
+            if result["valid"]:
+                valid_count += 1
+                await asyncio.to_thread(storage.increase_score, ip, port, protocol)
+                await asyncio.to_thread(storage.update_proxy, {
+                    "ip": ip,
+                    "port": port,
+                    "protocol": protocol,
+                    "country": result["country"],
+                    "latency": result["latency"],
+                    "last_check": now,
+                })
+            else:
                 invalid_count += 1
+                await asyncio.to_thread(storage.decrease_score, ip, port, protocol)
+        except Exception as exc:
+            logger.warning("[RE-VALIDATE] DB exception: %s", exc)
 
-            # Progress log every 20 or at completion
-            if done_count % 20 == 0 or done_count == total:
-                logger.info(
-                    "[RE-VALIDATE] Progress: %d/%d done (%d valid, %d invalid)",
-                    done_count, total, valid_count, invalid_count
-                )
+        if done_count % 20 == 0 or done_count == total:
+            logger.info("[RE-VALIDATE] Progress: %d/%d done (%d valid, %d invalid)", done_count, total, valid_count, invalid_count)
 
-    # Remove dead proxies (score <= 0)
-    removed = storage.remove_low_score()
+    removed = await asyncio.to_thread(storage.remove_low_score)
 
     logger.info("=" * 60)
     logger.info("[RE-VALIDATE] COMPLETE")
@@ -246,3 +188,15 @@ def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
         "invalid": invalid_count,
         "removed": removed,
     }
+
+def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(async_run_validate(target_proxies), loop)
+        return future.result()
+    else:
+        return asyncio.run(async_run_validate(target_proxies))

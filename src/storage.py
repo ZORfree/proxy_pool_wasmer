@@ -408,8 +408,14 @@ class Storage:
                 clauses.append(f"protocol = {self.ph}")
                 params.append(str(val).lower())
             elif key == "country" and val:
-                clauses.append(f"country = {self.ph}")
-                params.append(str(val).upper())
+                countries = [c.strip().upper() for c in str(val).split(',')]
+                if len(countries) == 1:
+                    clauses.append(f"country = {self.ph}")
+                    params.append(countries[0])
+                else:
+                    placeholders = ', '.join([self.ph] * len(countries))
+                    clauses.append(f"country IN ({placeholders})")
+                    params.extend(countries)
         where = " AND ".join(clauses)
         return f"WHERE {where}" if where else "", params
 

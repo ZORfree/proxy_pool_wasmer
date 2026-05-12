@@ -51,10 +51,10 @@ class SettingsIn(BaseModel):
 # Proxy Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/get")
+@router.get("/random")
 def api_get_proxy(
     protocol: Optional[str] = Query(None, description="http / https / socks5"),
-    country: Optional[str] = Query(None, description="Country code, e.g. US"),
+    country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
     max_latency: Optional[float] = Query(None, description="Max latency in ms"),
     anonymous: Optional[bool] = Query(None, description="Require anonymous"),
 ):
@@ -79,7 +79,7 @@ def api_get_proxy(
 @router.get("/all")
 def api_get_all(
     protocol: Optional[str] = Query(None),
-    country: Optional[str] = Query(None),
+    country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
     max_latency: Optional[float] = Query(None),
     anonymous: Optional[bool] = Query(None),
 ):
@@ -101,11 +101,11 @@ def api_get_all(
 @router.get("/simple", response_class=PlainTextResponse)
 def api_get_simple(
     protocol: Optional[str] = Query(None, description="http / https / socks5"),
-    country: Optional[str] = Query(None, description="Country code, e.g. US"),
+    country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
     max_latency: Optional[float] = Query(None, description="Max latency in ms"),
     anonymous: Optional[bool] = Query(None, description="Require anonymous"),
 ):
-    """Get all proxies matching the filters in plain text format (ip:port)."""
+    """Get all proxies matching the filters in plain text format (protocol://ip:port)."""
     filters = {}
     if protocol:
         filters["protocol"] = protocol
@@ -118,7 +118,7 @@ def api_get_simple(
 
     storage = get_storage()
     proxies = storage.get_all(filters)
-    lines = [f"{p['ip']}:{p['port']}" for p in proxies]
+    lines = [f"{p['protocol']}://{p['ip']}:{p['port']}" for p in proxies]
     return "\n".join(lines)
 
 
