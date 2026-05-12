@@ -25,7 +25,7 @@ jobs:
           WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
         run: |
           echo "🔐 Wasmer 登录中..."
-          wasmer login --token "${{ secrets.WASMER_TOKEN }}"
+          wasmer login "${{ secrets.WASMER_TOKEN }}"
           
           echo "🚀 开始部署到 Wasmer Edge..."
           wasmer deploy --non-interactive
