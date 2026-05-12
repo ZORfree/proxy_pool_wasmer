@@ -12,7 +12,12 @@ COPY . .
 # Ensure data directory exists for sqlite volume
 RUN mkdir -p /data
 
-EXPOSE 8000
+# Set default host and port environment variables
+ENV HOST=0.0.0.0
+ENV PORT=8000
+
+# Expose the default port
+EXPOSE $PORT
 
 # Set environment variable to indicate container environment
 ENV IN_DOCKER=True

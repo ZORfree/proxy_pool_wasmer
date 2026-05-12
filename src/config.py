@@ -39,5 +39,5 @@ FETCH_INTERVAL = int(os.getenv("FETCH_INTERVAL", "300"))  # seconds
 VALIDATE_INTERVAL = int(os.getenv("VALIDATE_INTERVAL", "600"))  # seconds
 
 # --- Server ---
-API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
