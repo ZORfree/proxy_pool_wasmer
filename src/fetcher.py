@@ -63,22 +63,42 @@ def _fetch_url(url: str, timeout: int = 15) -> str:
             return body
 
 
-def _extract_proxies(text: str, pattern: str = "") -> Set[Tuple[str, int]]:
-    """Extract unique (ip, port) pairs from text."""
+def _extract_proxies(text: str, pattern: str = "", protocol: str = "auto", delimiter: str = "newline") -> Set[Tuple[str, int, str]]:
+    """Extract unique (ip, port, protocol) tuples from text based on delimiter and protocol setting."""
     results = set()
     regex = re.compile(pattern) if pattern else IP_PORT_PATTERN
-    for match in regex.finditer(text):
-        ip = match.group(1)
-        port_str = match.group(2)
-        try:
-            port = int(port_str)
-            if 1 <= port <= 65535:
-                # Basic IP validation
-                parts = ip.split(".")
-                if all(0 <= int(p) <= 255 for p in parts):
-                    results.add((ip, port))
-        except (ValueError, IndexError):
+
+    pieces = text.split(',') if delimiter == "comma" else text.splitlines()
+
+    for piece in pieces:
+        piece = piece.strip()
+        if not piece:
             continue
+
+        p_proto = protocol
+        if protocol == "auto":
+            piece_lower = piece.lower()
+            if "http://" in piece_lower or "https://" in piece_lower:
+                p_proto = "http"
+            elif "socks5://" in piece_lower:
+                p_proto = "socks5"
+            elif "socks4://" in piece_lower:
+                p_proto = "socks4"
+            else:
+                continue  # Skip if no protocol prefix is found
+
+        for match in regex.finditer(piece):
+            ip = match.group(1)
+            port_str = match.group(2)
+            try:
+                port = int(port_str)
+                if 1 <= port <= 65535:
+                    parts = ip.split(".")
+                    if all(0 <= int(p) <= 255 for p in parts):
+                        results.add((ip, port, p_proto))
+            except (ValueError, IndexError):
+                continue
+
     return results
 
 
@@ -171,7 +191,7 @@ def _request_via_proxy(
 
 
 def _fetch_single_source(
-    name: str, url: str, src_type: str, pattern: str
+    name: str, url: str, src_type: str, pattern: str, protocol: str = "auto", delimiter: str = "newline"
 ) -> List[Dict]:
     """Fetch and extract raw proxies from a single source."""
     proxies = []
@@ -179,14 +199,13 @@ def _fetch_single_source(
         logger.info("[FETCH] Fetching source: %s", name)
         logger.info("[FETCH]   URL: %s", url)
         text = _fetch_url(url)
-        pairs = _extract_proxies(text, pattern)
-        protocol = _detect_protocol_from_url(url)
+        triples = _extract_proxies(text, pattern, protocol, delimiter)
 
-        for ip, port in pairs:
+        for ip, port, p_proto in triples:
             proxies.append({
                 "ip": ip,
                 "port": port,
-                "protocol": protocol,
+                "protocol": p_proto,
                 "source": name,
             })
         logger.info("[FETCH]   Result: %d raw proxies extracted from [%s]", len(proxies), name)
@@ -238,13 +257,18 @@ def run_fetch() -> Dict:
     # --- Step 1: Combine sources ---
     all_sources = []
     for name, url, src_type, pattern in BUILTIN_SOURCES:
-        all_sources.append((name, url, src_type, pattern))
+        # For built-in sources, use old detect logic
+        proto = _detect_protocol_from_url(url)
+        all_sources.append((name, url, src_type, pattern, proto, "newline"))
 
     try:
         db_sources = storage.get_sources(active_only=True)
         logger.info("[FETCH] DB custom sources: %d", len(db_sources))
         for s in db_sources:
-            all_sources.append((s["name"], s["url"], s["type"], s.get("pattern", "")))
+            all_sources.append((
+                s["name"], s["url"], s["type"], s.get("pattern", ""),
+                s.get("protocol", "auto"), s.get("delimiter", "newline")
+            ))
     except Exception as exc:
         logger.warning("[FETCH] Failed to load DB sources: %s", exc)
 
@@ -254,9 +278,9 @@ def run_fetch() -> Dict:
     raw_proxies = []
     seen_keys = set()  # (ip, port, protocol) dedup
 
-    for i, (name, url, src_type, pattern) in enumerate(all_sources, 1):
+    for i, (name, url, src_type, pattern, protocol, delimiter) in enumerate(all_sources, 1):
         logger.info("[FETCH] [%d/%d] Fetching: %s", i, len(all_sources), name)
-        source_proxies = _fetch_single_source(name, url, src_type, pattern)
+        source_proxies = _fetch_single_source(name, url, src_type, pattern, protocol, delimiter)
         for p in source_proxies:
             key = (p["ip"], p["port"], p["protocol"])
             if key not in seen_keys:

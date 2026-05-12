@@ -113,6 +113,8 @@ class Storage:
                         url     VARCHAR(512) NOT NULL,
                         type    VARCHAR(16)  NOT NULL DEFAULT 'web',
                         pattern VARCHAR(512) DEFAULT '',
+                        protocol VARCHAR(16) DEFAULT 'auto',
+                        delimiter VARCHAR(16) DEFAULT 'newline',
                         status  TINYINT      DEFAULT 1,
                         UNIQUE KEY uq_url (url)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -147,6 +149,8 @@ class Storage:
                         url     VARCHAR(512) NOT NULL,
                         type    VARCHAR(16)  NOT NULL DEFAULT 'web',
                         pattern VARCHAR(512) DEFAULT '',
+                        protocol VARCHAR(16) DEFAULT 'auto',
+                        delimiter VARCHAR(16) DEFAULT 'newline',
                         status  TINYINT      DEFAULT 1,
                         UNIQUE (url)
                     );
@@ -162,6 +166,12 @@ class Storage:
                 cur.execute("ALTER TABLE proxies ADD COLUMN added_time VARCHAR(32) DEFAULT ''")
             except Exception:
                 pass  # Ignore if column already exists
+
+            try:
+                cur.execute("ALTER TABLE sources ADD COLUMN protocol VARCHAR(16) DEFAULT 'auto'")
+                cur.execute("ALTER TABLE sources ADD COLUMN delimiter VARCHAR(16) DEFAULT 'newline'")
+            except Exception:
+                pass
 
             # Seed defaults
             for k, v in DEFAULT_SETTINGS.items():
@@ -285,12 +295,14 @@ class Storage:
         try:
             with self._get_cursor() as cur:
                 cur.execute(
-                    f"INSERT {self.ignore} INTO sources (name, url, type, pattern, status) VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph})",
+                    f"INSERT {self.ignore} INTO sources (name, url, type, pattern, protocol, delimiter, status) VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph})",
                     (
                         source.get("name", ""),
                         source["url"],
                         source.get("type", "web"),
                         source.get("pattern", ""),
+                        source.get("protocol", "auto"),
+                        source.get("delimiter", "newline"),
                         source.get("status", 1),
                     ),
                 )

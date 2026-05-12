@@ -75,6 +75,24 @@
                 <input class="form-input" id="addSourcePattern" placeholder="(\d+\.\d+\.\d+\.\d+):(\d+)">
             </div>
         </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">协议</label>
+                <select class="form-select" id="addSourceProtocol">
+                    <option value="auto">自动探测 (需包含 http:// 等)</option>
+                    <option value="http">强制 HTTP/HTTPS</option>
+                    <option value="socks5">强制 SOCKS5</option>
+                    <option value="socks4">强制 SOCKS4</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">分割方式</label>
+                <select class="form-select" id="addSourceDelimiter">
+                    <option value="newline">换行符分割 (\n)</option>
+                    <option value="comma">逗号分割 (,)</option>
+                </select>
+            </div>
+        </div>
         <div class="modal-footer">
             <button class="btn" onclick="closeModal('addSourceModal')">取消</button>
             <button class="btn btn-primary" onclick="addSource()">添加</button>
@@ -227,12 +245,13 @@
                             <th>名称</th>
                             <th>URL</th>
                             <th>类型</th>
+                            <th>协议</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="sourceTableBody">
-                        <tr><td colspan="6" class="empty-state"><p>加载中...</p></td></tr>
+                        <tr><td colspan="7" class="empty-state"><p>加载中...</p></td></tr>
                     </tbody>
                 </table>
             </div>

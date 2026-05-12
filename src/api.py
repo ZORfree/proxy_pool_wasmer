@@ -6,6 +6,7 @@ import threading
 from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException, BackgroundTasks
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from .storage import get_storage
@@ -37,6 +38,8 @@ class SourceIn(BaseModel):
     url: str
     type: str = "web"
     pattern: str = ""
+    protocol: str = "auto"
+    delimiter: str = "newline"
     status: int = 1
 
 
@@ -93,6 +96,30 @@ def api_get_all(
 
     storage = get_storage()
     return storage.get_all(filters)
+
+
+@router.get("/simple", response_class=PlainTextResponse)
+def api_get_simple(
+    protocol: Optional[str] = Query(None, description="http / https / socks5"),
+    country: Optional[str] = Query(None, description="Country code, e.g. US"),
+    max_latency: Optional[float] = Query(None, description="Max latency in ms"),
+    anonymous: Optional[bool] = Query(None, description="Require anonymous"),
+):
+    """Get all proxies matching the filters in plain text format (ip:port)."""
+    filters = {}
+    if protocol:
+        filters["protocol"] = protocol
+    if country:
+        filters["country"] = country
+    if max_latency is not None:
+        filters["max_latency"] = max_latency
+    if anonymous is not None:
+        filters["anonymous"] = anonymous
+
+    storage = get_storage()
+    proxies = storage.get_all(filters)
+    lines = [f"{p['ip']}:{p['port']}" for p in proxies]
+    return "\n".join(lines)
 
 
 @router.get("/count")

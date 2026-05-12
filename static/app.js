@@ -338,7 +338,7 @@ function renderSourceTable(sources) {
     const tbody = document.getElementById('sourceTableBody');
 
     if (!sources || sources.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="icon">🔗</div><p>暂无自定义代理源<br><small style="color:var(--text-muted)">系统内置源会在抓取时自动使用</small></p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="icon">🔗</div><p>暂无自定义代理源<br><small style="color:var(--text-muted)">系统内置源会在抓取时自动使用</small></p></td></tr>';
         return;
     }
 
@@ -346,11 +346,13 @@ function renderSourceTable(sources) {
         const statusBadge = s.status
             ? '<span class="badge badge-https">启用</span>'
             : '<span class="badge badge-socks4">禁用</span>';
+        const protoBadge = `<span class="badge badge-country">${s.protocol || 'auto'}</span>`;
         return `<tr>
             <td>${s.id}</td>
             <td style="color:var(--text-primary);font-weight:500;">${s.name || '—'}</td>
-            <td style="font-size:0.75rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="${s.url}">${s.url}</td>
+            <td style="font-size:0.75rem;max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="${s.url}">${s.url}</td>
             <td><span class="badge badge-http">${s.type}</span></td>
+            <td>${protoBadge}</td>
             <td>${statusBadge}</td>
             <td>
                 <button class="btn btn-sm btn-danger" onclick="deleteSource(${s.id})">删除</button>
@@ -364,6 +366,8 @@ async function addSource() {
     const url = document.getElementById('addSourceUrl').value.trim();
     const type = document.getElementById('addSourceType').value;
     const pattern = document.getElementById('addSourcePattern').value.trim();
+    const protocol = document.getElementById('addSourceProtocol').value;
+    const delimiter = document.getElementById('addSourceDelimiter').value;
 
     if (!url) {
         toast('请填写 URL', 'error');
@@ -371,7 +375,7 @@ async function addSource() {
     }
 
     try {
-        await apiPost('/sources', { name, url, type, pattern, status: 1 });
+        await apiPost('/sources', { name, url, type, pattern, protocol, delimiter, status: 1 });
         toast('代理源添加成功', 'success');
         closeModal('addSourceModal');
         document.getElementById('addSourceName').value = '';
