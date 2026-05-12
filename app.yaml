@@ -3,6 +3,6 @@ owner: yis293
 package: .
 kind: wasmer.io/App.v0
 
-capabilities:
-  database:
-    engine: mysql
+volumes:
+  - name: db-data
+    mount: /data

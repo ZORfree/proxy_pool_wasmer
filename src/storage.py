@@ -1,59 +1,21 @@
 """
-MySQL storage module using PyMySQL (pure Python, WASIX compatible).
+Storage module supporting both MySQL and SQLite.
+If DB_* env vars are all present, uses MySQL (PyMySQL).
+Otherwise, falls back to SQLite (sqlite3).
 Manages proxies, sources, and global settings tables.
 """
 import logging
 import time
+import contextlib
+import os
 from typing import Optional, List, Dict, Any
 
-import pymysql
-import pymysql.cursors
-
 from .config import (
-    DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD,
+    USE_MYSQL, DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD,
     INITIAL_SCORE, MAX_SCORE, MIN_SCORE, SCORE_INCREMENT, SCORE_DECREMENT,
 )
 
 logger = logging.getLogger("proxy_pool.storage")
-
-# ---------------------------------------------------------------------------
-# SQL Table Definitions
-# ---------------------------------------------------------------------------
-
-CREATE_PROXIES = """
-CREATE TABLE IF NOT EXISTS proxies (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    ip          VARCHAR(64)  NOT NULL,
-    port        INT          NOT NULL,
-    protocol    VARCHAR(16)  NOT NULL DEFAULT 'http',
-    anonymous   TINYINT      NOT NULL DEFAULT 0,
-    country     VARCHAR(8)   DEFAULT '',
-    latency     FLOAT        DEFAULT -1,
-    score       INT          DEFAULT 50,
-    last_check  VARCHAR(32)  DEFAULT '',
-    source      VARCHAR(256) DEFAULT '',
-    UNIQUE KEY uq_proxy (ip, port, protocol)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-"""
-
-CREATE_SOURCES = """
-CREATE TABLE IF NOT EXISTS sources (
-    id      INT AUTO_INCREMENT PRIMARY KEY,
-    name    VARCHAR(128) NOT NULL DEFAULT '',
-    url     VARCHAR(512) NOT NULL,
-    type    VARCHAR(16)  NOT NULL DEFAULT 'web',
-    pattern VARCHAR(512) DEFAULT '',
-    status  TINYINT      DEFAULT 1,
-    UNIQUE KEY uq_url (url)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-"""
-
-CREATE_SETTINGS = """
-CREATE TABLE IF NOT EXISTS settings (
-    `key`   VARCHAR(128) PRIMARY KEY,
-    `value` TEXT NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-"""
 
 DEFAULT_SETTINGS = {
     "validate_url": "https://api.ipapi.is",
@@ -63,67 +25,161 @@ DEFAULT_SETTINGS = {
     "validate_interval": "600",
 }
 
-
-# ---------------------------------------------------------------------------
-# Storage class
-# ---------------------------------------------------------------------------
-
 class Storage:
-    """MySQL storage backend using PyMySQL."""
-
     def __init__(self):
-        self._conn: Optional[pymysql.Connection] = None
+        self._conn = None
+        self.is_mysql = USE_MYSQL
 
-    def _get_conn(self) -> pymysql.Connection:
-        """Get or create a MySQL connection with auto-reconnect."""
-        if self._conn is None or not self._conn.open:
-            self._conn = pymysql.connect(
-                host=DB_HOST,
-                port=DB_PORT,
-                user=DB_USERNAME,
-                password=DB_PASSWORD,
-                database=DB_NAME,
-                charset="utf8mb4",
-                cursorclass=pymysql.cursors.DictCursor,
-                autocommit=True,
-                connect_timeout=10,
-            )
-            logger.info("MySQL connected: %s@%s:%s/%s", DB_USERNAME, DB_HOST, DB_PORT, DB_NAME)
+        if self.is_mysql:
+            import pymysql
+            import pymysql.cursors
+            self.pymysql = pymysql
+            self.ph = "%s"
+            self.ignore = "IGNORE"
+            logger.info("Storage initialized with MySQL backend.")
+        else:
+            import sqlite3
+            self.sqlite3 = sqlite3
+            self.ph = "?"
+            self.ignore = "OR IGNORE"
+            logger.info("Storage initialized with SQLite backend.")
+
+    def _get_conn(self):
+        if self.is_mysql:
+            if self._conn is None or not self._conn.open:
+                self._conn = self.pymysql.connect(
+                    host=DB_HOST,
+                    port=DB_PORT,
+                    user=DB_USERNAME,
+                    password=DB_PASSWORD,
+                    database=DB_NAME,
+                    charset="utf8mb4",
+                    cursorclass=self.pymysql.cursors.DictCursor,
+                    autocommit=True,
+                    connect_timeout=10,
+                )
+                logger.info("MySQL connected: %s@%s:%s/%s", DB_USERNAME, DB_HOST, DB_PORT, DB_NAME)
+            else:
+                try:
+                    self._conn.ping(reconnect=True)
+                except Exception:
+                    # Connection might be dead, try to re-establish
+                    self._conn = None
+                    return self._get_conn()
+        else:
+            if self._conn is None:
+                db_path = "/data/proxy_pool.db" if os.path.isdir("/data") else "proxy_pool.db"
+                self._conn = self.sqlite3.connect(db_path, check_same_thread=False)
+                self._conn.row_factory = self.sqlite3.Row
+                self._conn.isolation_level = None  # autocommit mode
         return self._conn
 
-    def init(self):
-        """Initialize database tables and seed default settings."""
+    @contextlib.contextmanager
+    def _get_cursor(self):
         conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(CREATE_PROXIES)
-            cur.execute(CREATE_SOURCES)
-            cur.execute(CREATE_SETTINGS)
+        if self.is_mysql:
+            with conn.cursor() as cur:
+                yield cur
+        else:
+            cur = conn.cursor()
+            try:
+                yield cur
+            finally:
+                cur.close()
+
+    def init(self):
+        with self._get_cursor() as cur:
+            if self.is_mysql:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS proxies (
+                        id          INT AUTO_INCREMENT PRIMARY KEY,
+                        ip          VARCHAR(64)  NOT NULL,
+                        port        INT          NOT NULL,
+                        protocol    VARCHAR(16)  NOT NULL DEFAULT 'http',
+                        anonymous   TINYINT      NOT NULL DEFAULT 0,
+                        country     VARCHAR(8)   DEFAULT '',
+                        latency     FLOAT        DEFAULT -1,
+                        score       INT          DEFAULT 50,
+                        last_check  VARCHAR(32)  DEFAULT '',
+                        source      VARCHAR(256) DEFAULT '',
+                        UNIQUE KEY uq_proxy (ip, port, protocol)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS sources (
+                        id      INT AUTO_INCREMENT PRIMARY KEY,
+                        name    VARCHAR(128) NOT NULL DEFAULT '',
+                        url     VARCHAR(512) NOT NULL,
+                        type    VARCHAR(16)  NOT NULL DEFAULT 'web',
+                        pattern VARCHAR(512) DEFAULT '',
+                        status  TINYINT      DEFAULT 1,
+                        UNIQUE KEY uq_url (url)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        `key`   VARCHAR(128) PRIMARY KEY,
+                        `value` TEXT NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """)
+            else:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS proxies (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ip          VARCHAR(64)  NOT NULL,
+                        port        INTEGER      NOT NULL,
+                        protocol    VARCHAR(16)  NOT NULL DEFAULT 'http',
+                        anonymous   TINYINT      NOT NULL DEFAULT 0,
+                        country     VARCHAR(8)   DEFAULT '',
+                        latency     FLOAT        DEFAULT -1,
+                        score       INTEGER      DEFAULT 50,
+                        last_check  VARCHAR(32)  DEFAULT '',
+                        source      VARCHAR(256) DEFAULT '',
+                        UNIQUE (ip, port, protocol)
+                    );
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS sources (
+                        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name    VARCHAR(128) NOT NULL DEFAULT '',
+                        url     VARCHAR(512) NOT NULL,
+                        type    VARCHAR(16)  NOT NULL DEFAULT 'web',
+                        pattern VARCHAR(512) DEFAULT '',
+                        status  TINYINT      DEFAULT 1,
+                        UNIQUE (url)
+                    );
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        `key`   VARCHAR(128) PRIMARY KEY,
+                        `value` TEXT NOT NULL
+                    );
+                """)
+
             # Seed defaults
             for k, v in DEFAULT_SETTINGS.items():
                 cur.execute(
-                    "INSERT IGNORE INTO settings (`key`, `value`) VALUES (%s, %s)",
+                    f"INSERT {self.ignore} INTO settings (`key`, `value`) VALUES ({self.ph}, {self.ph})",
                     (k, v),
                 )
         logger.info("Database tables initialized.")
 
     def close(self):
-        """Close the MySQL connection."""
-        if self._conn and self._conn.open:
-            self._conn.close()
-            logger.info("MySQL connection closed.")
-
-    # --- Proxy operations ---
+        if self._conn:
+            if self.is_mysql and getattr(self._conn, "open", False):
+                self._conn.close()
+            elif not self.is_mysql:
+                self._conn.close()
+            logger.info("Database connection closed.")
 
     def add_proxy(self, proxy: Dict[str, Any]) -> bool:
-        """Insert a new proxy, ignoring duplicates."""
         try:
-            conn = self._get_conn()
-            with conn.cursor() as cur:
+            with self._get_cursor() as cur:
                 cur.execute(
-                    """INSERT IGNORE INTO proxies
+                    f"""INSERT {self.ignore} INTO proxies
                        (ip, port, protocol, anonymous, country,
                         latency, score, last_check, source)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph})""",
                     (
                         proxy["ip"], proxy["port"],
                         proxy.get("protocol", "http"),
@@ -141,14 +197,12 @@ class Storage:
             return False
 
     def update_proxy(self, proxy: Dict[str, Any]) -> bool:
-        """Update an existing proxy's attributes."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        with self._get_cursor() as cur:
             cur.execute(
-                """UPDATE proxies SET
-                    anonymous=%s, country=%s,
-                    latency=%s, score=%s, last_check=%s
-                   WHERE ip=%s AND port=%s AND protocol=%s""",
+                f"""UPDATE proxies SET
+                    anonymous={self.ph}, country={self.ph},
+                    latency={self.ph}, score={self.ph}, last_check={self.ph}
+                   WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}""",
                 (
                     proxy.get("anonymous", 0),
                     proxy.get("country", ""),
@@ -162,79 +216,68 @@ class Storage:
         return True
 
     def delete_proxy(self, ip: str, port: int, protocol: str = "http") -> bool:
-        """Delete a proxy by its unique key."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        with self._get_cursor() as cur:
             cur.execute(
-                "DELETE FROM proxies WHERE ip=%s AND port=%s AND protocol=%s",
+                f"DELETE FROM proxies WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}",
                 (ip, port, protocol),
             )
         return True
 
     def get_random(self, filters: Optional[Dict] = None) -> Optional[Dict]:
-        """Get a random proxy matching the given filters."""
-        where, params = _build_filter_clause(filters)
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        where, params = self._build_filter_clause(filters)
+        rand_func = "RAND()" if self.is_mysql else "RANDOM()"
+        with self._get_cursor() as cur:
             cur.execute(
-                f"SELECT * FROM proxies {where} ORDER BY RAND() LIMIT 1", params
+                f"SELECT * FROM proxies {where} ORDER BY {rand_func} LIMIT 1", params
             )
-            return cur.fetchone()
+            row = cur.fetchone()
+            return dict(row) if row else None
 
     def get_all(self, filters: Optional[Dict] = None) -> List[Dict]:
-        """Get all proxies matching the given filters."""
-        where, params = _build_filter_clause(filters)
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        where, params = self._build_filter_clause(filters)
+        with self._get_cursor() as cur:
             cur.execute(
                 f"SELECT * FROM proxies {where} ORDER BY score DESC, latency ASC",
                 params,
             )
-            return cur.fetchall() or []
+            rows = cur.fetchall()
+            return [dict(r) for r in rows] if rows else []
 
     def get_count(self, filters: Optional[Dict] = None) -> int:
-        """Count proxies matching the given filters."""
-        where, params = _build_filter_clause(filters)
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        where, params = self._build_filter_clause(filters)
+        with self._get_cursor() as cur:
             cur.execute(f"SELECT COUNT(*) as cnt FROM proxies {where}", params)
             row = cur.fetchone()
-            return row["cnt"] if row else 0
+            if row:
+                return dict(row)["cnt"]
+            return 0
 
     def decrease_score(self, ip: str, port: int, protocol: str) -> None:
-        """Decrease a proxy's score after a failed validation."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        func = "GREATEST" if self.is_mysql else "MAX"
+        with self._get_cursor() as cur:
             cur.execute(
-                "UPDATE proxies SET score = GREATEST(score - %s, %s) WHERE ip=%s AND port=%s AND protocol=%s",
+                f"UPDATE proxies SET score = {func}(score - {self.ph}, {self.ph}) WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}",
                 (SCORE_DECREMENT, MIN_SCORE, ip, port, protocol),
             )
 
     def increase_score(self, ip: str, port: int, protocol: str) -> None:
-        """Increase a proxy's score after a successful validation."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        func = "LEAST" if self.is_mysql else "MIN"
+        with self._get_cursor() as cur:
             cur.execute(
-                "UPDATE proxies SET score = LEAST(score + %s, %s) WHERE ip=%s AND port=%s AND protocol=%s",
+                f"UPDATE proxies SET score = {func}(score + {self.ph}, {self.ph}) WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}",
                 (SCORE_INCREMENT, MAX_SCORE, ip, port, protocol),
             )
 
     def remove_low_score(self) -> int:
-        """Remove proxies with score at or below minimum."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM proxies WHERE score <= %s", (MIN_SCORE,))
+        with self._get_cursor() as cur:
+            cur.execute(f"DELETE FROM proxies WHERE score <= {self.ph}", (MIN_SCORE,))
             return cur.rowcount
 
-    # --- Source operations ---
-
     def add_source(self, source: Dict[str, Any]) -> bool:
-        """Add a new proxy source."""
         try:
-            conn = self._get_conn()
-            with conn.cursor() as cur:
+            with self._get_cursor() as cur:
                 cur.execute(
-                    "INSERT IGNORE INTO sources (name, url, type, pattern, status) VALUES (%s,%s,%s,%s,%s)",
+                    f"INSERT {self.ignore} INTO sources (name, url, type, pattern, status) VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph})",
                     (
                         source.get("name", ""),
                         source["url"],
@@ -248,67 +291,60 @@ class Storage:
             return False
 
     def get_sources(self, active_only: bool = True) -> List[Dict]:
-        """Get all proxy sources."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        with self._get_cursor() as cur:
             if active_only:
                 cur.execute("SELECT * FROM sources WHERE status=1")
             else:
                 cur.execute("SELECT * FROM sources")
-            return cur.fetchall() or []
+            rows = cur.fetchall()
+            return [dict(r) for r in rows] if rows else []
 
     def update_source(self, source_id: int, data: Dict) -> bool:
-        """Update a source by ID."""
-        sets = ", ".join(f"`{k}`=%s" for k in data)
+        sets = ", ".join(f"`{k}`={self.ph}" if self.is_mysql else f"{k}={self.ph}" for k in data)
         vals = list(data.values()) + [source_id]
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(f"UPDATE sources SET {sets} WHERE id=%s", vals)
+        with self._get_cursor() as cur:
+            cur.execute(f"UPDATE sources SET {sets} WHERE id={self.ph}", vals)
         return True
 
     def delete_source(self, source_id: int) -> bool:
-        """Delete a source by ID."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM sources WHERE id=%s", (source_id,))
+        with self._get_cursor() as cur:
+            cur.execute(f"DELETE FROM sources WHERE id={self.ph}", (source_id,))
         return True
 
-    # --- Settings ---
-
     def get_setting(self, key: str) -> Optional[str]:
-        """Get a single setting value."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute("SELECT `value` FROM settings WHERE `key`=%s", (key,))
+        with self._get_cursor() as cur:
+            cur.execute(f"SELECT `value` FROM settings WHERE `key`={self.ph}", (key,))
             row = cur.fetchone()
-            return row["value"] if row else None
+            if row:
+                return dict(row)["value"]
+            return None
 
     def set_setting(self, key: str, value: str) -> None:
-        """Set a setting value (insert or update)."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO settings (`key`,`value`) VALUES (%s,%s) "
-                "ON DUPLICATE KEY UPDATE `value`=%s",
-                (key, value, value),
-            )
+        with self._get_cursor() as cur:
+            if self.is_mysql:
+                cur.execute(
+                    f"INSERT INTO settings (`key`,`value`) VALUES ({self.ph},{self.ph}) "
+                    f"ON DUPLICATE KEY UPDATE `value`={self.ph}",
+                    (key, value, value),
+                )
+            else:
+                cur.execute(
+                    f"INSERT INTO settings (`key`,`value`) VALUES ({self.ph},{self.ph}) "
+                    f"ON CONFLICT(`key`) DO UPDATE SET `value`={self.ph}",
+                    (key, value, value),
+                )
 
     def get_all_settings(self) -> Dict[str, str]:
-        """Get all settings as a dict."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        with self._get_cursor() as cur:
             cur.execute("SELECT `key`, `value` FROM settings")
-            rows = cur.fetchall() or []
-            return {r["key"]: r["value"] for r in rows}
-
-    # --- Stats ---
+            rows = cur.fetchall()
+            return {r["key"]: r["value"] for r in rows} if rows else {}
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get aggregated statistics."""
-        conn = self._get_conn()
-        with conn.cursor() as cur:
+        with self._get_cursor() as cur:
             cur.execute("SELECT COUNT(*) as cnt FROM proxies")
-            total = (cur.fetchone() or {}).get("cnt", 0)
+            total_row = cur.fetchone()
+            total = dict(total_row).get("cnt", 0) if total_row else 0
 
             cur.execute(
                 "SELECT country, COUNT(*) as cnt FROM proxies "
@@ -323,10 +359,11 @@ class Storage:
             proto_rows = cur.fetchall() or []
 
             cur.execute(
-                "SELECT COUNT(*) as cnt FROM proxies WHERE score >= %s",
+                f"SELECT COUNT(*) as cnt FROM proxies WHERE score >= {self.ph}",
                 (INITIAL_SCORE,),
             )
-            active = (cur.fetchone() or {}).get("cnt", 0)
+            active_row = cur.fetchone()
+            active = dict(active_row).get("cnt", 0) if active_row else 0
 
         return {
             "total": total,
@@ -335,43 +372,31 @@ class Storage:
             "by_protocol": {r["protocol"]: r["cnt"] for r in proto_rows},
         }
 
+    def _build_filter_clause(self, filters: Optional[Dict]) -> tuple:
+        if not filters:
+            return "", []
+        clauses = []
+        params = []
+        for key, val in filters.items():
+            if key == "max_latency" and val is not None:
+                clauses.append(f"latency <= {self.ph} AND latency >= 0")
+                params.append(float(val))
+            elif key == "anonymous" and val is not None:
+                clauses.append(f"anonymous = {self.ph}")
+                params.append(1 if val else 0)
+            elif key == "protocol" and val:
+                clauses.append(f"protocol = {self.ph}")
+                params.append(str(val).lower())
+            elif key == "country" and val:
+                clauses.append(f"country = {self.ph}")
+                params.append(str(val).upper())
+        where = " AND ".join(clauses)
+        return f"WHERE {where}" if where else "", params
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _build_filter_clause(filters: Optional[Dict]) -> tuple:
-    """Build SQL WHERE clause from filter dict."""
-    if not filters:
-        return "", []
-    clauses = []
-    params = []
-    for key, val in filters.items():
-        if key == "max_latency" and val is not None:
-            clauses.append("latency <= %s AND latency >= 0")
-            params.append(float(val))
-        elif key == "anonymous" and val is not None:
-            clauses.append("anonymous = %s")
-            params.append(1 if val else 0)
-        elif key == "protocol" and val:
-            clauses.append("protocol = %s")
-            params.append(str(val).lower())
-        elif key == "country" and val:
-            clauses.append("country = %s")
-            params.append(str(val).upper())
-    where = " AND ".join(clauses)
-    return f"WHERE {where}" if where else "", params
-
-
-# ---------------------------------------------------------------------------
-# Singleton
-# ---------------------------------------------------------------------------
 
 _storage_instance: Optional[Storage] = None
 
-
 def get_storage() -> Storage:
-    """Return the singleton storage instance, creating it on first call."""
     global _storage_instance
     if _storage_instance is not None:
         return _storage_instance

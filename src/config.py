@@ -4,12 +4,30 @@ All settings are read from environment variables with sensible defaults.
 """
 import os
 
-# --- Database (Wasmer auto-provisions MySQL) ---
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
-DB_NAME = os.getenv("DB_NAME", "proxy_pool")
-DB_USERNAME = os.getenv("DB_USERNAME", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+# --- Database (Wasmer auto-provisions MySQL, else fallback to SQLite) ---
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT_STR = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USERNAME = os.getenv("DB_USERNAME")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+USE_MYSQL = all([
+    DB_HOST is not None,
+    DB_PORT_STR is not None,
+    DB_NAME is not None,
+    DB_USERNAME is not None,
+    DB_PASSWORD is not None
+])
+
+if USE_MYSQL:
+    DB_PORT = int(DB_PORT_STR)
+else:
+    # Default values for local development when not using MySQL
+    DB_HOST = "127.0.0.1"
+    DB_PORT = 3306
+    DB_NAME = "proxy_pool"
+    DB_USERNAME = "root"
+    DB_PASSWORD = ""
 
 # --- Validation ---
 VALIDATE_URL = os.getenv("VALIDATE_URL", "https://api.ipapi.is")

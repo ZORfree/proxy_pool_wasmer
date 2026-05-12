@@ -23,59 +23,7 @@ logger = logging.getLogger("proxy_pool.fetcher")
 
 # Format: (name, url, type, pattern)
 # type: "api" = plain text IP:Port per line, "web" = HTML with regex
-BUILTIN_SOURCES = [
-    # --- Plain text API sources (IP:Port per line) ---
-    (
-        "ProxyScrape HTTP",
-        "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all",
-        "api", "",
-    ),
-    (
-        "ProxyScrape SOCKS5",
-        "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all",
-        "api", "",
-    ),
-    (
-        "TheSpeedX HTTP",
-        "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
-        "api", "",
-    ),
-    (
-        "TheSpeedX SOCKS5",
-        "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
-        "api", "",
-    ),
-    (
-        "Monosans HTTP",
-        "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
-        "api", "",
-    ),
-    (
-        "Monosans SOCKS5",
-        "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
-        "api", "",
-    ),
-    (
-        "ShiftyTR HTTP",
-        "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
-        "api", "",
-    ),
-    (
-        "ShiftyTR SOCKS5",
-        "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt",
-        "api", "",
-    ),
-    (
-        "Hookzof HTTP",
-        "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt",
-        "api", "",
-    ),
-    (
-        "Clarketm HTTP",
-        "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
-        "api", "",
-    ),
-]
+BUILTIN_SOURCES = []
 
 # Regex pattern for matching IP:Port
 IP_PORT_PATTERN = re.compile(
