@@ -328,6 +328,7 @@ function exportProxies() {
 async function loadSources() {
     try {
         const sources = await apiGet('/sources?active_only=false');
+        window.currentSources = sources;
         renderSourceTable(sources);
     } catch (e) {
         console.error('loadSources error:', e);
@@ -355,6 +356,7 @@ function renderSourceTable(sources) {
             <td>${protoBadge}</td>
             <td>${statusBadge}</td>
             <td>
+                <button class="btn btn-sm" onclick="editSource(${s.id})">编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteSource(${s.id})">删除</button>
             </td>
         </tr>`;
@@ -384,6 +386,47 @@ async function addSource() {
         loadSources();
     } catch (e) {
         toast('添加失败: ' + e.message, 'error');
+    }
+}
+
+function editSource(id) {
+    const source = window.currentSources.find(s => s.id === id);
+    if (!source) return;
+    
+    document.getElementById('editSourceId').value = source.id;
+    document.getElementById('editSourceName').value = source.name || '';
+    document.getElementById('editSourceUrl').value = source.url || '';
+    document.getElementById('editSourceType').value = source.type || 'web';
+    document.getElementById('editSourcePattern').value = source.pattern || '';
+    document.getElementById('editSourceProtocol').value = source.protocol || 'auto';
+    document.getElementById('editSourceDelimiter').value = source.delimiter || 'newline';
+    document.getElementById('editSourceStatus').value = source.status !== undefined ? source.status : 1;
+    
+    openModal('editSourceModal');
+}
+
+async function saveEditSource() {
+    const id = parseInt(document.getElementById('editSourceId').value);
+    const name = document.getElementById('editSourceName').value.trim();
+    const url = document.getElementById('editSourceUrl').value.trim();
+    const type = document.getElementById('editSourceType').value;
+    const pattern = document.getElementById('editSourcePattern').value.trim();
+    const protocol = document.getElementById('editSourceProtocol').value;
+    const delimiter = document.getElementById('editSourceDelimiter').value;
+    const status = parseInt(document.getElementById('editSourceStatus').value);
+
+    if (!url) {
+        toast('请填写 URL', 'error');
+        return;
+    }
+
+    try {
+        await apiPut(`/sources/${id}`, { name, url, type, pattern, protocol, delimiter, status });
+        toast('代理源已更新', 'success');
+        closeModal('editSourceModal');
+        loadSources();
+    } catch (e) {
+        toast('更新失败: ' + e.message, 'error');
     }
 }
 
