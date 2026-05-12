@@ -131,6 +131,10 @@ function renderBarChart(containerId, data, limit) {
 // Proxy List
 // =========================================================================
 
+let allProxies = [];
+let currentPage = 1;
+let pageSize = 20;
+
 async function loadProxies() {
     const protocol = document.getElementById('filterProtocol').value;
     const country = document.getElementById('filterCountry').value.trim();
@@ -144,13 +148,71 @@ async function loadProxies() {
 
     try {
         const proxies = await apiGet('/all' + query);
-        document.getElementById('selectAll').checked = false;
-        renderProxyTable(proxies);
+        allProxies = proxies;
+        currentPage = 1;
+        renderProxyPage();
     } catch (e) {
         console.error('loadProxies error:', e);
         document.getElementById('proxyTableBody').innerHTML =
             '<tr><td colspan="10" class="empty-state"><p>加载失败</p></td></tr>';
     }
+}
+
+function renderProxyPage() {
+    const total = allProxies.length;
+    document.getElementById('totalProxies').textContent = total;
+    
+    const pageSizeSelect = document.getElementById('pageSize');
+    if (pageSizeSelect) {
+        pageSize = parseInt(pageSizeSelect.value) || 20;
+    }
+    
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    document.getElementById('totalPages').textContent = totalPages;
+    
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+    document.getElementById('pageInput').value = currentPage;
+    
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    const pageData = allProxies.slice(start, end);
+    
+    document.getElementById('selectAll').checked = false;
+    renderProxyTable(pageData);
+}
+
+function changePageSize() {
+    currentPage = 1;
+    renderProxyPage();
+}
+
+function prevPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        renderProxyPage();
+    }
+}
+
+function nextPage() {
+    const total = allProxies.length;
+    const totalPages = Math.ceil(total / pageSize);
+    if (currentPage < totalPages) {
+        currentPage++;
+        renderProxyPage();
+    }
+}
+
+function jumpPage() {
+    let page = parseInt(document.getElementById('pageInput').value);
+    const total = allProxies.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    
+    if (isNaN(page) || page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    
+    currentPage = page;
+    renderProxyPage();
 }
 
 function renderProxyTable(proxies) {

@@ -165,21 +165,21 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
                 })
             else:
                 invalid_count += 1
-                await asyncio.to_thread(storage.decrease_score, ip, port, protocol)
+                await asyncio.to_thread(storage.delete_proxy, ip, port, protocol)
         except Exception as exc:
             logger.warning("[RE-VALIDATE] DB exception: %s", exc)
 
         if done_count % 20 == 0 or done_count == total:
             logger.info("[RE-VALIDATE] Progress: %d/%d done (%d valid, %d invalid)", done_count, total, valid_count, invalid_count)
 
-    removed = await asyncio.to_thread(storage.remove_low_score)
+    removed = invalid_count
 
     logger.info("=" * 60)
     logger.info("[RE-VALIDATE] COMPLETE")
     logger.info("[RE-VALIDATE]   Total: %d", len(proxies))
     logger.info("[RE-VALIDATE]   Valid: %d", valid_count)
     logger.info("[RE-VALIDATE]   Invalid: %d", invalid_count)
-    logger.info("[RE-VALIDATE]   Removed (score<=0): %d", removed)
+    logger.info("[RE-VALIDATE]   Removed (invalid): %d", removed)
     logger.info("=" * 60)
 
     return {

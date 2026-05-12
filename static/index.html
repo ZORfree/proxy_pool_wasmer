@@ -280,6 +280,24 @@
                     </tbody>
                 </table>
             </div>
+            
+            <!-- Pagination -->
+            <div class="pagination-bar" style="display:flex; justify-content:space-between; padding: 1rem; align-items:center; border-top: 1px solid var(--border-light);">
+                <div style="font-size: 0.85rem; color: var(--text-muted);">
+                    共 <span id="totalProxies" style="font-weight: 600; color: var(--text-primary);">0</span> 条，
+                    每页显示 <select id="pageSize" onchange="changePageSize()" style="border-radius: 4px; padding: 2px 4px; border: 1px solid var(--border-light); background: var(--bg-card); color: var(--text-primary);">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select> 条
+                </div>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <button class="btn btn-sm" onclick="prevPage()">上一页</button>
+                    <span style="font-size: 0.85rem; color: var(--text-muted);">第 <input type="number" id="pageInput" value="1" style="width:40px;text-align:center;border-radius: 4px; padding: 2px 4px; border: 1px solid var(--border-light); background: var(--bg-card); color: var(--text-primary);" onchange="jumpPage()"> / <span id="totalPages">1</span> 页</span>
+                    <button class="btn btn-sm" onclick="nextPage()">下一页</button>
+                </div>
+            </div>
         </div>
     </div>
 
