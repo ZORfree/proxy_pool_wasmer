@@ -161,6 +161,8 @@
             <div class="panel-header">
                 <div class="panel-title">🌐 代理列表</div>
                 <div class="panel-actions">
+                    <button class="btn btn-sm btn-primary" onclick="batchValidate()">✅ 批量验证</button>
+                    <button class="btn btn-sm btn-danger" onclick="batchDelete()">🗑️ 批量删除</button>
                     <button class="btn btn-sm" onclick="openModal('addProxyModal')">➕ 添加</button>
                     <button class="btn btn-sm" onclick="exportProxies()">📋 导出</button>
                     <button class="btn btn-sm" onclick="loadProxies()">🔄 刷新</button>
@@ -185,6 +187,7 @@
                 <table>
                     <thead>
                         <tr>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"></th>
                             <th>IP</th>
                             <th>端口</th>
                             <th>协议</th>
@@ -197,7 +200,7 @@
                         </tr>
                     </thead>
                     <tbody id="proxyTableBody">
-                        <tr><td colspan="9" class="empty-state"><p>加载中...</p></td></tr>
+                        <tr><td colspan="10" class="empty-state"><p>加载中...</p></td></tr>
                     </tbody>
                 </table>
             </div>

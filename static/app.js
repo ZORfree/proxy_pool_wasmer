@@ -144,11 +144,12 @@ async function loadProxies() {
 
     try {
         const proxies = await apiGet('/all' + query);
+        document.getElementById('selectAll').checked = false;
         renderProxyTable(proxies);
     } catch (e) {
         console.error('loadProxies error:', e);
         document.getElementById('proxyTableBody').innerHTML =
-            '<tr><td colspan="9" class="empty-state"><p>加载失败</p></td></tr>';
+            '<tr><td colspan="10" class="empty-state"><p>加载失败</p></td></tr>';
     }
 }
 
@@ -156,7 +157,7 @@ function renderProxyTable(proxies) {
     const tbody = document.getElementById('proxyTableBody');
 
     if (!proxies || proxies.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><div class="icon">🔍</div><p>暂无代理数据，请先抓取代理</p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="empty-state"><div class="icon">🔍</div><p>暂无代理数据，请先抓取代理</p></td></tr>';
         return;
     }
 
@@ -173,6 +174,7 @@ function renderProxyTable(proxies) {
                             p.latency < 2000 ? 'color:var(--accent-amber)' : 'color:var(--accent-rose)';
 
         return `<tr>
+            <td><input type="checkbox" class="proxy-checkbox" data-ip="${p.ip}" data-port="${p.port}" data-protocol="${proto}"></td>
             <td style="color:var(--text-primary);font-weight:500;font-family:monospace;">${p.ip}</td>
             <td style="font-family:monospace;">${p.port}</td>
             <td><span class="badge ${badgeClass}">${proto.toUpperCase()}</span></td>
@@ -189,6 +191,67 @@ function renderProxyTable(proxies) {
             </td>
         </tr>`;
     }).join('');
+}
+
+function toggleSelectAll(el) {
+    document.querySelectorAll('.proxy-checkbox').forEach(cb => cb.checked = el.checked);
+}
+
+function getSelectedProxies() {
+    const selected = [];
+    document.querySelectorAll('.proxy-checkbox:checked').forEach(cb => {
+        selected.push({
+            ip: cb.dataset.ip,
+            port: parseInt(cb.dataset.port),
+            protocol: cb.dataset.protocol
+        });
+    });
+    return selected;
+}
+
+async function batchDelete() {
+    const selected = getSelectedProxies();
+    if (selected.length === 0) {
+        toast('请先选择要删除的代理', 'warning');
+        return;
+    }
+
+    if (!confirm(`确认批量删除选中的 ${selected.length} 个代理？`)) return;
+
+    try {
+        const result = await apiPost('/batch-delete', { proxies: selected });
+        if (result.success) {
+            toast(`成功删除 ${result.count} 个代理`, 'success');
+            loadProxies();
+            loadStats();
+        } else {
+            toast('批量删除失败', 'error');
+        }
+    } catch (e) {
+        toast('批量删除请求失败', 'error');
+    }
+}
+
+async function batchValidate() {
+    const selected = getSelectedProxies();
+    if (selected.length === 0) {
+        toast('请先选择要验证的代理', 'warning');
+        return;
+    }
+
+    try {
+        const result = await apiPost('/batch-check', { proxies: selected });
+        if (result.success) {
+            toast(result.message, 'success');
+            // Reset selection
+            document.getElementById('selectAll').checked = false;
+            document.querySelectorAll('.proxy-checkbox').forEach(cb => cb.checked = false);
+        } else {
+            toast('批量验证提交失败: ' + result.message, 'error');
+        }
+    } catch (e) {
+        toast('批量验证请求失败', 'error');
+    }
 }
 
 async function addProxy() {
@@ -384,20 +447,21 @@ async function triggerFetch() {
     btn.innerHTML = '<span class="spinner"></span> 抓取中...';
 
     try {
-        const result = await apiPost('/fetch');
+        const result = await apiGet('/fetch');
         if (result.success) {
-            const d = result.fetched || {};
-            toast(`抓取完成：${d.sources_crawled || 0} 源, 发现 ${d.proxies_found || 0} 个, 验证通过 ${d.validated || 0} 个, 入库 ${d.stored || 0} 个`, 'success');
-            loadStats();
-            loadProxies();
+            toast(result.message, 'success');
         } else {
             toast('抓取失败: ' + (result.message || '未知错误'), 'error');
         }
     } catch (e) {
         toast('抓取请求失败: ' + e.message, 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '🔄 抓取代理';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = '🔄 抓取代理';
+            loadStats();
+            loadProxies();
+        }, 3000);
     }
 }
 
@@ -407,20 +471,21 @@ async function triggerValidate() {
     btn.innerHTML = '<span class="spinner"></span> 验证中...';
 
     try {
-        const result = await apiPost('/validate');
+        const result = await apiGet('/check');
         if (result.success) {
-            const d = result.validated || {};
-            toast(`验证完成：${d.valid || 0} 有效 / ${d.invalid || 0} 无效 / ${d.removed || 0} 已移除`, 'success');
-            loadStats();
-            loadProxies();
+            toast(result.message, 'success');
         } else {
             toast('验证失败: ' + (result.message || '未知错误'), 'error');
         }
     } catch (e) {
         toast('验证请求失败: ' + e.message, 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '✅ 验证代理';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = '✅ 验证代理';
+            loadStats();
+            loadProxies();
+        }, 3000);
     }
 }
 

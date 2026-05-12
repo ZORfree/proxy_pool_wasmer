@@ -696,3 +696,22 @@ tbody tr:hover {
 .empty-state p {
     font-size: 0.9rem;
 }
+
+/* --- Checkbox Styling --- */
+.proxy-checkbox, #selectAll {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent-indigo);
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+thead th:first-child,
+tbody td:first-child {
+    text-align: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    vertical-align: middle;
+}

@@ -101,6 +101,7 @@ class Storage:
                         latency     FLOAT        DEFAULT -1,
                         score       INT          DEFAULT 50,
                         last_check  VARCHAR(32)  DEFAULT '',
+                        added_time  VARCHAR(32)  DEFAULT '',
                         source      VARCHAR(256) DEFAULT '',
                         UNIQUE KEY uq_proxy (ip, port, protocol)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -134,6 +135,7 @@ class Storage:
                         latency     FLOAT        DEFAULT -1,
                         score       INTEGER      DEFAULT 50,
                         last_check  VARCHAR(32)  DEFAULT '',
+                        added_time  VARCHAR(32)  DEFAULT '',
                         source      VARCHAR(256) DEFAULT '',
                         UNIQUE (ip, port, protocol)
                     );
@@ -155,6 +157,11 @@ class Storage:
                         `value` TEXT NOT NULL
                     );
                 """)
+
+            try:
+                cur.execute("ALTER TABLE proxies ADD COLUMN added_time VARCHAR(32) DEFAULT ''")
+            except Exception:
+                pass  # Ignore if column already exists
 
             # Seed defaults
             for k, v in DEFAULT_SETTINGS.items():
@@ -178,8 +185,8 @@ class Storage:
                 cur.execute(
                     f"""INSERT {self.ignore} INTO proxies
                        (ip, port, protocol, anonymous, country,
-                        latency, score, last_check, source)
-                       VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph})""",
+                        latency, score, last_check, added_time, source)
+                       VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph})""",
                     (
                         proxy["ip"], proxy["port"],
                         proxy.get("protocol", "http"),
@@ -188,6 +195,7 @@ class Storage:
                         proxy.get("latency", -1),
                         proxy.get("score", INITIAL_SCORE),
                         proxy.get("last_check", ""),
+                        proxy.get("added_time", ""),
                         proxy.get("source", ""),
                     ),
                 )

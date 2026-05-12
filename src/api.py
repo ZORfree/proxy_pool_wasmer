@@ -2,9 +2,10 @@
 API module - provides proxy query, source management, and settings endpoints.
 """
 import logging
+import threading
 from typing import Optional
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
 from .storage import get_storage
@@ -25,6 +26,10 @@ class ProxyIn(BaseModel):
     anonymous: int = 0
     country: str = ""
     source: str = ""
+
+
+class ProxyBatchIn(BaseModel):
+    proxies: list[dict]  # list of {ip, port, protocol}
 
 
 class SourceIn(BaseModel):
@@ -133,6 +138,17 @@ def api_delete_proxy(
     return {"success": True}
 
 
+@router.post("/batch-delete")
+def api_batch_delete(body: ProxyBatchIn):
+    """Batch delete proxies."""
+    storage = get_storage()
+    count = 0
+    for p in body.proxies:
+        if storage.delete_proxy(p['ip'], p['port'], p.get('protocol', 'http')):
+            count += 1
+    return {"success": True, "count": count}
+
+
 # ---------------------------------------------------------------------------
 # Source Endpoints
 # ---------------------------------------------------------------------------
@@ -192,27 +208,65 @@ def api_update_settings(body: SettingsIn):
 # Manual Triggers
 # ---------------------------------------------------------------------------
 
-@router.post("/fetch")
-def api_trigger_fetch():
-    """Manually trigger proxy fetching."""
+_fetch_lock = threading.Lock()
+_validate_lock = threading.Lock()
+
+def _run_fetch_task():
+    if not _fetch_lock.acquire(blocking=False):
+        return
     try:
         from .fetcher import run_fetch
-        result = run_fetch()
-        return {"success": True, "fetched": result}
-    except ImportError:
-        return {"success": False, "message": "Fetcher module not available yet."}
-    except Exception as exc:
-        return {"success": False, "message": str(exc)}
+        run_fetch()
+    except Exception as e:
+        logger.error("Fetch task error: %s", e)
+    finally:
+        _fetch_lock.release()
 
-
-@router.post("/validate")
-def api_trigger_validate():
-    """Manually trigger proxy validation."""
+def _run_validate_task():
+    if not _validate_lock.acquire(blocking=False):
+        return
     try:
         from .validator import run_validate
-        result = run_validate()
-        return {"success": True, "validated": result}
-    except ImportError:
-        return {"success": False, "message": "Validator module not available yet."}
-    except Exception as exc:
-        return {"success": False, "message": str(exc)}
+        run_validate()
+    except Exception as e:
+        logger.error("Validate task error: %s", e)
+    finally:
+        _validate_lock.release()
+
+@router.get("/fetch")
+def api_trigger_fetch(background_tasks: BackgroundTasks):
+    """Trigger proxy fetching in background."""
+    if _fetch_lock.locked():
+        return {"success": False, "message": "Fetch task is already running."}
+    background_tasks.add_task(_run_fetch_task)
+    return {"success": True, "message": "Fetch task started in background."}
+
+
+@router.get("/check")
+def api_trigger_check(background_tasks: BackgroundTasks):
+    """Trigger proxy validation in background."""
+    if _validate_lock.locked():
+        return {"success": False, "message": "Check task is already running."}
+    background_tasks.add_task(_run_validate_task)
+    return {"success": True, "message": "Check task started in background."}
+
+
+def _run_batch_validate_task(proxies: list):
+    if not _validate_lock.acquire(blocking=False):
+        return
+    try:
+        from .validator import run_validate
+        run_validate(target_proxies=proxies)
+    except Exception as e:
+        logger.error("Batch validate task error: %s", e)
+    finally:
+        _validate_lock.release()
+
+
+@router.post("/batch-check")
+def api_batch_check(body: ProxyBatchIn, background_tasks: BackgroundTasks):
+    """Batch check specific proxies."""
+    if _validate_lock.locked():
+        return {"success": False, "message": "A validation task is already running."}
+    background_tasks.add_task(_run_batch_validate_task, body.proxies)
+    return {"success": True, "message": f"Started background check for {len(body.proxies)} proxies."}

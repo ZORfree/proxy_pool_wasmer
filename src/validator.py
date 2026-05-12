@@ -12,7 +12,7 @@ Uses httpx for proxy-aware HTTP requests with fallback to urllib.
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .storage import get_storage
@@ -112,7 +112,7 @@ def _request_via_proxy(
         return None
 
 
-def run_validate() -> Dict:
+def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
     """
     Run a full validation cycle on all proxies currently in the database.
 
@@ -144,10 +144,36 @@ def run_validate() -> Dict:
     except Exception:
         timeout = VALIDATE_TIMEOUT
 
-    proxies = storage.get_all()
+    try:
+        interval_str = storage.get_setting("validate_interval")
+        check_interval = int(interval_str) if interval_str else 600
+    except Exception:
+        check_interval = 600
+
+    if target_proxies:
+        proxies = target_proxies
+    else:
+        all_proxies = storage.get_all()
+        proxies = []
+        now_ts = datetime.now(timezone.utc).timestamp()
+
+        for p in all_proxies:
+            last_check = p.get("last_check", "")
+            if not last_check:
+                proxies.append(p)
+                continue
+            try:
+                dt = datetime.strptime(last_check, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                if now_ts - dt.timestamp() >= check_interval:
+                    proxies.append(p)
+            except Exception:
+                proxies.append(p)
 
     if not proxies:
-        logger.info("[RE-VALIDATE] No proxies in database to validate.")
+        if target_proxies:
+            logger.info("[RE-VALIDATE] No target proxies to validate.")
+        else:
+            logger.info("[RE-VALIDATE] No proxies need validation at this time (checked %d).", len(all_proxies))
         return {"total": 0, "valid": 0, "invalid": 0, "removed": 0}
 
     logger.info("=" * 60)

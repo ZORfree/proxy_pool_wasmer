@@ -325,6 +325,7 @@ def run_fetch() -> Dict:
                 "latency": vp["latency"],
                 "source": vp["source"],
                 "last_check": now,
+                "added_time": now,
                 "score": 50,  # initial score
             })
             if ok:
