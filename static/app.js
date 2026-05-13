@@ -237,9 +237,24 @@ function renderProxyTable(proxies) {
                             p.latency < 2000 ? 'color:var(--accent-amber)' : 'color:var(--accent-rose)';
 
         const score = p.score || 0;
-        let scoreClass = 'badge-emerald';
-        if (score > 30) scoreClass = 'badge-amber';
-        if (score > 60) scoreClass = 'badge-rose';
+        let scoreStyle = '';
+        let scoreText = '';
+        if (score <= 10) {
+            scoreStyle = 'background:var(--accent-emerald);color:#fff;border:none';
+            scoreText = `${score} 纯净`;
+        } else if (score <= 30) {
+            scoreStyle = 'background:#10b981;color:#fff;border:none'; // teal/emerald variant
+            scoreText = `${score} 低风险`;
+        } else if (score <= 60) {
+            scoreStyle = 'background:var(--accent-amber);color:#fff;border:none';
+            scoreText = `${score} 中风险`;
+        } else if (score <= 80) {
+            scoreStyle = 'background:#f97316;color:#fff;border:none'; // orange
+            scoreText = `${score} 高风险`;
+        } else {
+            scoreStyle = 'background:var(--accent-rose);color:#fff;border:none';
+            scoreText = `${score} 极度风险`;
+        }
 
         return `<tr>
             <td><input type="checkbox" class="proxy-checkbox" data-ip="${p.ip}" data-port="${p.port}" data-protocol="${proto}"></td>
@@ -248,7 +263,7 @@ function renderProxyTable(proxies) {
             <td><span class="badge ${badgeClass}">${proto.toUpperCase()}</span></td>
             <td>${p.country ? `<span class="badge badge-country">${p.country}</span>` : '—'}</td>
             <td style="${latencyColor}">${latency}</td>
-            <td><span class="badge ${scoreClass}">${score}</span></td>
+            <td><span class="badge" style="${scoreStyle}">${scoreText}</span></td>
             <td style="font-size:0.75rem;">${p.added_time || '—'}</td>
             <td style="font-size:0.75rem;">${p.last_check || '—'}</td>
             <td style="font-size:0.75rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${p.source || ''}">${p.source || '—'}</td>
