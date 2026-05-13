@@ -88,7 +88,6 @@ async function loadStats() {
         const stats = await apiGet('/stats');
 
         document.getElementById('statTotal').textContent = stats.total || 0;
-        document.getElementById('statActive').textContent = stats.active || 0;
 
         const protos = stats.by_protocol || {};
         const countries = stats.by_country || {};
@@ -139,11 +138,13 @@ async function loadProxies() {
     const protocol = document.getElementById('filterProtocol').value;
     const country = document.getElementById('filterCountry').value.trim();
     const maxLatency = document.getElementById('filterMaxLatency').value;
+    const maxScore = document.getElementById('filterMaxScore').value;
 
     let qs = [];
     if (protocol) qs.push(`protocol=${protocol}`);
     if (country) qs.push(`country=${country}`);
     if (maxLatency) qs.push(`max_latency=${maxLatency}`);
+    if (maxScore) qs.push(`max_score=${maxScore}`);
     const query = qs.length ? '?' + qs.join('&') : '';
 
     try {
@@ -235,6 +236,11 @@ function renderProxyTable(proxies) {
                             p.latency < 500 ? 'color:var(--accent-emerald)' :
                             p.latency < 2000 ? 'color:var(--accent-amber)' : 'color:var(--accent-rose)';
 
+        const score = p.score || 0;
+        let scoreClass = 'badge-emerald';
+        if (score > 30) scoreClass = 'badge-amber';
+        if (score > 60) scoreClass = 'badge-rose';
+
         return `<tr>
             <td><input type="checkbox" class="proxy-checkbox" data-ip="${p.ip}" data-port="${p.port}" data-protocol="${proto}"></td>
             <td style="color:var(--text-primary);font-weight:500;font-family:monospace;">${p.ip}</td>
@@ -242,10 +248,8 @@ function renderProxyTable(proxies) {
             <td><span class="badge ${badgeClass}">${proto.toUpperCase()}</span></td>
             <td>${p.country ? `<span class="badge badge-country">${p.country}</span>` : '—'}</td>
             <td style="${latencyColor}">${latency}</td>
-            <td>
-                <div class="score-bar"><div class="fill" style="width:${scorePct}%;background:${scoreColor};"></div></div>
-                <span style="font-size:0.75rem;">${score}</span>
-            </td>
+            <td><span class="badge ${scoreClass}">${score}</span></td>
+            <td style="font-size:0.75rem;">${p.added_time || '—'}</td>
             <td style="font-size:0.75rem;">${p.last_check || '—'}</td>
             <td style="font-size:0.75rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${p.source || ''}">${p.source || '—'}</td>
             <td>
@@ -352,17 +356,27 @@ async function deleteProxy(ip, port, protocol) {
 }
 
 function exportProxies() {
-    const rows = document.querySelectorAll('#proxyTableBody tr');
+    const selected = getSelectedProxies();
     const lines = [];
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 3) {
-            const ip = cells[0].textContent.trim();
-            const port = cells[1].textContent.trim();
-            const proto = cells[2].textContent.trim().toLowerCase();
-            lines.push(`${proto}://${ip}:${port}`);
-        }
-    });
+
+    if (selected.length > 0) {
+        // Export selected only
+        selected.forEach(p => {
+            lines.push(`${p.protocol}://${p.ip}:${p.port}`);
+        });
+    } else {
+        // Export all on current page
+        const rows = document.querySelectorAll('#proxyTableBody tr');
+        rows.forEach(row => {
+            const cb = row.querySelector('.proxy-checkbox');
+            if (cb) {
+                const ip = cb.dataset.ip;
+                const port = cb.dataset.port;
+                const proto = cb.dataset.protocol;
+                lines.push(`${proto}://${ip}:${port}`);
+            }
+        });
+    }
 
     if (lines.length === 0) {
         toast('没有可导出的代理', 'error');

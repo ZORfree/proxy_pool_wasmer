@@ -225,7 +225,7 @@ class Storage:
                     proxy.get("anonymous", 0),
                     proxy.get("country", ""),
                     proxy.get("latency", -1),
-                    proxy.get("score", INITIAL_SCORE),
+                    proxy.get("score", 0),
                     proxy.get("last_check", ""),
                     proxy["ip"], proxy["port"],
                     proxy.get("protocol", "http"),
@@ -255,7 +255,7 @@ class Storage:
         where, params = self._build_filter_clause(filters)
         with self._get_cursor() as cur:
             cur.execute(
-                f"SELECT * FROM proxies {where} ORDER BY score DESC, latency ASC",
+                f"SELECT * FROM proxies {where} ORDER BY score ASC, latency ASC",
                 params,
             )
             rows = cur.fetchall()
@@ -401,6 +401,9 @@ class Storage:
             if key == "max_latency" and val is not None:
                 clauses.append(f"latency <= {self.ph} AND latency >= 0")
                 params.append(float(val))
+            elif key == "max_score" and val is not None:
+                clauses.append(f"score <= {self.ph}")
+                params.append(int(val))
             elif key == "anonymous" and val is not None:
                 clauses.append(f"anonymous = {self.ph}")
                 params.append(1 if val else 0)

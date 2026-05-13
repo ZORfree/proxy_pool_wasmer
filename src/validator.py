@@ -20,6 +20,7 @@ from aiohttp_socks import ProxyConnector
 
 from .storage import get_storage
 from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
+from .score import calculate_risk_score
 
 logger = logging.getLogger("proxy_pool.validator")
 
@@ -53,6 +54,7 @@ async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semapho
             "valid": False,
             "country": proxy.get("country", ""),
             "latency": -1,
+            "score": 0,
         }
 
         try:
@@ -63,6 +65,7 @@ async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semapho
             if data is not None:
                 result["valid"] = True
                 result["latency"] = round(elapsed, 1)
+                result["score"] = calculate_risk_score(data)
                 location = data.get("location", {})
                 country_code = location.get("country_code", "")
                 if country_code:
@@ -106,7 +109,7 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
     else:
         all_proxies = await asyncio.to_thread(storage.get_all)
         proxies = []
-        now_ts = datetime.now(timezone.utc).timestamp()
+        now_ts = datetime.now().timestamp()
 
         for p in all_proxies:
             last_check = p.get("last_check", "")
@@ -114,7 +117,7 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
                 proxies.append(p)
                 continue
             try:
-                dt = datetime.strptime(last_check, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                dt = datetime.strptime(last_check, "%Y-%m-%d %H:%M:%S")
                 if now_ts - dt.timestamp() >= check_interval:
                     proxies.append(p)
             except Exception:
@@ -135,7 +138,7 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
 
     valid_count = 0
     invalid_count = 0
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     semaphore = asyncio.Semaphore(concurrency)
     tasks = [_validate_single(p, validate_url, timeout, semaphore) for p in proxies]
@@ -161,6 +164,7 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
                     "protocol": protocol,
                     "country": result["country"],
                     "latency": result["latency"],
+                    "score": result["score"],
                     "last_check": now,
                 })
             else:

@@ -17,6 +17,7 @@ from aiohttp_socks import ProxyConnector
 
 from .storage import get_storage
 from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
+from .score import calculate_risk_score
 
 logger = logging.getLogger("proxy_pool.fetcher")
 
@@ -111,6 +112,7 @@ async def _validate_proxy(proxy: Dict, validate_url: str, timeout: int, semaphor
             "valid": False,
             "country": "",
             "latency": -1,
+            "score": 0,
         }
 
         try:
@@ -121,6 +123,7 @@ async def _validate_proxy(proxy: Dict, validate_url: str, timeout: int, semaphor
             if data is not None:
                 result["valid"] = True
                 result["latency"] = round(elapsed, 1)
+                result["score"] = calculate_risk_score(data)
                 location = data.get("location", {})
                 country_code = location.get("country_code", "")
                 if country_code:
@@ -230,7 +233,7 @@ async def async_run_fetch() -> Dict:
             logger.info("[VALIDATE] Progress: %d/%d done (%d valid, %d invalid)", done_count, total, len(valid_proxies), invalid_count)
 
     stored_count = 0
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for vp in valid_proxies:
         try:
             ok = await asyncio.to_thread(storage.add_proxy, {
@@ -242,7 +245,7 @@ async def async_run_fetch() -> Dict:
                 "source": vp["source"],
                 "last_check": now,
                 "added_time": now,
-                "score": 50,
+                "score": vp["score"],
             })
             if ok:
                 stored_count += 1

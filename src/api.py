@@ -56,6 +56,7 @@ def api_get_proxy(
     protocol: Optional[str] = Query(None, description="http / https / socks5"),
     country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
     max_latency: Optional[float] = Query(None, description="Max latency in ms"),
+    max_score: Optional[int] = Query(None, description="Max risk score"),
     anonymous: Optional[bool] = Query(None, description="Require anonymous"),
 ):
     """Get a random proxy matching the filters."""
@@ -66,6 +67,8 @@ def api_get_proxy(
         filters["country"] = country
     if max_latency is not None:
         filters["max_latency"] = max_latency
+    if max_score is not None:
+        filters["max_score"] = max_score
     if anonymous is not None:
         filters["anonymous"] = anonymous
 
@@ -81,6 +84,7 @@ def api_get_all(
     protocol: Optional[str] = Query(None),
     country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
     max_latency: Optional[float] = Query(None),
+    max_score: Optional[int] = Query(None),
     anonymous: Optional[bool] = Query(None),
 ):
     """Get all proxies matching the filters."""
@@ -91,6 +95,8 @@ def api_get_all(
         filters["country"] = country
     if max_latency is not None:
         filters["max_latency"] = max_latency
+    if max_score is not None:
+        filters["max_score"] = max_score
     if anonymous is not None:
         filters["anonymous"] = anonymous
 
@@ -103,6 +109,7 @@ def api_get_simple(
     protocol: Optional[str] = Query(None, description="http / https / socks5"),
     country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
     max_latency: Optional[float] = Query(None, description="Max latency in ms"),
+    max_score: Optional[int] = Query(None, description="Max risk score"),
     anonymous: Optional[bool] = Query(None, description="Require anonymous"),
 ):
     """Get all proxies matching the filters in plain text format (protocol://ip:port)."""
@@ -113,6 +120,8 @@ def api_get_simple(
         filters["country"] = country
     if max_latency is not None:
         filters["max_latency"] = max_latency
+    if max_score is not None:
+        filters["max_score"] = max_score
     if anonymous is not None:
         filters["anonymous"] = anonymous
 

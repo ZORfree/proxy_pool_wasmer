@@ -199,10 +199,6 @@
                 <div class="value" id="statTotal">-</div>
             </div>
             <div class="stat-card">
-                <div class="label">可用代理</div>
-                <div class="value" id="statActive">-</div>
-            </div>
-            <div class="stat-card">
                 <div class="label">协议类型</div>
                 <div class="value" id="statProtocols">-</div>
             </div>
@@ -256,6 +252,8 @@
                 </select>
                 <input class="form-input" id="filterCountry" placeholder="国家代码 (如 US)" onchange="loadProxies()" style="width:150px">
                 <input class="form-input" id="filterMaxLatency" type="number" placeholder="最大延迟 (ms)" onchange="loadProxies()" style="width:160px">
+                <input class="form-input" id="filterMaxScore" type="number" placeholder="最大风险分数" onchange="loadProxies()" style="width:140px">
+                <button class="btn btn-outline" onclick="loadProxies()">刷新</button>
             </div>
 
             <!-- Table -->
@@ -267,9 +265,10 @@
                             <th>IP</th>
                             <th>端口</th>
                             <th>协议</th>
-                            <th>国家</th>
-                            <th>延迟</th>
-                            <th>分数</th>
+                             <th>国家</th>
+                             <th>延迟</th>
+                             <th>风险分数</th>
+                             <th>入库时间</th>
                             <th>最后检查</th>
                             <th>来源</th>
                             <th>操作</th>

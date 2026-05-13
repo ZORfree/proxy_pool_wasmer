@@ -15,6 +15,7 @@ RUN mkdir -p /data
 # Set default host and port environment variables
 ENV HOST=0.0.0.0
 ENV PORT=8000
+ENV TZ=Asia/Shanghai
 
 # Expose the default port
 EXPOSE $PORT
