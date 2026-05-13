@@ -228,15 +228,11 @@ function renderProxyTable(proxies) {
         const proto = (p.protocol || 'http').toLowerCase();
         const badgeClass = `badge-${proto}`;
         const score = p.score || 0;
-        const scorePct = Math.min(score, 100);
-        const scoreColor = score >= 50 ? 'var(--accent-emerald)' :
-                          score >= 20 ? 'var(--accent-amber)' : 'var(--accent-rose)';
         const latency = p.latency >= 0 ? `${Math.round(p.latency)}ms` : '—';
         const latencyColor = p.latency < 0 ? '' :
                             p.latency < 500 ? 'color:var(--accent-emerald)' :
                             p.latency < 2000 ? 'color:var(--accent-amber)' : 'color:var(--accent-rose)';
 
-        const score = p.score || 0;
         let scoreStyle = '';
         let scoreText = '';
         if (score <= 10) {
