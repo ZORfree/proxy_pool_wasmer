@@ -265,17 +265,37 @@
                             <th>IP</th>
                             <th>端口</th>
                             <th>协议</th>
-                             <th>国家</th>
-                             <th>延迟</th>
-                             <th>风险分数</th>
-                             <th>入库时间</th>
-                            <th>最后检查</th>
+                            <th class="sortable-th" data-sort-key="country" data-sort-label="国家地区" aria-sort="none">
+                                <button type="button" class="sort-header" onclick="toggleProxySort('country')" title="点击按国家地区升序排序">
+                                    国家地区 <span class="sort-arrows" aria-hidden="true"><span class="sort-arrow sort-arrow-up">▲</span><span class="sort-arrow sort-arrow-down">▼</span></span>
+                                </button>
+                            </th>
+                            <th class="sortable-th" data-sort-key="latency" data-sort-label="延迟" aria-sort="none">
+                                <button type="button" class="sort-header" onclick="toggleProxySort('latency')" title="点击按延迟升序排序">
+                                    延迟 <span class="sort-arrows" aria-hidden="true"><span class="sort-arrow sort-arrow-up">▲</span><span class="sort-arrow sort-arrow-down">▼</span></span>
+                                </button>
+                            </th>
+                            <th class="sortable-th" data-sort-key="score" data-sort-label="风险分数" aria-sort="none">
+                                <button type="button" class="sort-header" onclick="toggleProxySort('score')" title="点击按风险分数升序排序">
+                                    风险分数 <span class="sort-arrows" aria-hidden="true"><span class="sort-arrow sort-arrow-up">▲</span><span class="sort-arrow sort-arrow-down">▼</span></span>
+                                </button>
+                            </th>
+                            <th class="sortable-th" data-sort-key="added_time" data-sort-label="入库时间" aria-sort="none">
+                                <button type="button" class="sort-header" onclick="toggleProxySort('added_time')" title="点击按入库时间升序排序">
+                                    入库时间 <span class="sort-arrows" aria-hidden="true"><span class="sort-arrow sort-arrow-up">▲</span><span class="sort-arrow sort-arrow-down">▼</span></span>
+                                </button>
+                            </th>
+                            <th class="sortable-th" data-sort-key="last_check" data-sort-label="最后检查时间" aria-sort="none">
+                                <button type="button" class="sort-header" onclick="toggleProxySort('last_check')" title="点击按最后检查时间升序排序">
+                                    最后检查时间 <span class="sort-arrows" aria-hidden="true"><span class="sort-arrow sort-arrow-up">▲</span><span class="sort-arrow sort-arrow-down">▼</span></span>
+                                </button>
+                            </th>
                             <th>来源</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="proxyTableBody">
-                        <tr><td colspan="10" class="empty-state"><p>加载中...</p></td></tr>
+                        <tr><td colspan="11" class="empty-state"><p>加载中...</p></td></tr>
                     </tbody>
                 </table>
             </div>

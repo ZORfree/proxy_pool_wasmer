@@ -133,6 +133,99 @@ function renderBarChart(containerId, data, limit) {
 let allProxies = [];
 let currentPage = 1;
 let pageSize = 20;
+let proxySortState = { key: '', direction: 'asc' };
+
+const PROXY_SORT_FIELDS = {
+    country: 'string',
+    latency: 'number',
+    score: 'number',
+    added_time: 'date',
+    last_check: 'date',
+};
+
+function getProxySortValue(proxy, key) {
+    const type = PROXY_SORT_FIELDS[key];
+    const raw = proxy ? proxy[key] : undefined;
+
+    if (raw === undefined || raw === null || raw === '') {
+        return { missing: true, value: null };
+    }
+
+    if (type === 'number') {
+        const value = Number(raw);
+        return Number.isFinite(value) && value >= 0
+            ? { missing: false, value }
+            : { missing: true, value: null };
+    }
+
+    if (type === 'date') {
+        const value = Date.parse(String(raw).replace(' ', 'T'));
+        return Number.isFinite(value)
+            ? { missing: false, value }
+            : { missing: true, value: null };
+    }
+
+    return { missing: false, value: String(raw).toUpperCase() };
+}
+
+function sortProxies(proxies, sortState = proxySortState) {
+    if (!Array.isArray(proxies) || !sortState.key || !PROXY_SORT_FIELDS[sortState.key]) {
+        return Array.isArray(proxies) ? proxies.slice() : [];
+    }
+
+    const direction = sortState.direction === 'desc' ? -1 : 1;
+    return proxies
+        .map((proxy, index) => ({ proxy, index }))
+        .sort((a, b) => {
+            const left = getProxySortValue(a.proxy, sortState.key);
+            const right = getProxySortValue(b.proxy, sortState.key);
+
+            if (left.missing && right.missing) return a.index - b.index;
+            if (left.missing) return 1;
+            if (right.missing) return -1;
+
+            let result = 0;
+            if (PROXY_SORT_FIELDS[sortState.key] === 'string') {
+                result = left.value.localeCompare(right.value);
+            } else {
+                result = left.value - right.value;
+            }
+
+            return result === 0 ? a.index - b.index : result * direction;
+        })
+        .map(item => item.proxy);
+}
+
+function updateProxySortHeaders() {
+    document.querySelectorAll('[data-sort-key]').forEach(th => {
+        const key = th.dataset.sortKey;
+        const active = key === proxySortState.key;
+        const direction = active ? proxySortState.direction : '';
+        const label = th.dataset.sortLabel || th.textContent.trim();
+        const title = active
+            ? `当前按${label}${direction === 'asc' ? '升序' : '降序'}排序，点击切换为${direction === 'asc' ? '降序' : '升序'}`
+            : `点击按${label}升序排序`;
+
+        th.classList.toggle('is-sorted', active);
+        th.classList.toggle('is-sort-asc', direction === 'asc');
+        th.classList.toggle('is-sort-desc', direction === 'desc');
+        th.setAttribute('aria-sort', active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
+
+        const button = th.querySelector('.sort-header');
+        if (button) button.title = title;
+    });
+}
+
+function toggleProxySort(key) {
+    if (!PROXY_SORT_FIELDS[key]) return;
+
+    proxySortState = {
+        key,
+        direction: proxySortState.key === key && proxySortState.direction === 'asc' ? 'desc' : 'asc',
+    };
+    currentPage = 1;
+    renderProxyPage();
+}
 
 async function loadProxies() {
     const protocol = document.getElementById('filterProtocol').value;
@@ -155,7 +248,7 @@ async function loadProxies() {
     } catch (e) {
         console.error('loadProxies error:', e);
         document.getElementById('proxyTableBody').innerHTML =
-            '<tr><td colspan="10" class="empty-state"><p>加载失败</p></td></tr>';
+            '<tr><td colspan="11" class="empty-state"><p>加载失败</p></td></tr>';
     }
 }
 
@@ -175,11 +268,13 @@ function renderProxyPage() {
     if (currentPage < 1) currentPage = 1;
     document.getElementById('pageInput').value = currentPage;
     
+    const sortedProxies = sortProxies(allProxies);
     const start = (currentPage - 1) * pageSize;
     const end = start + pageSize;
-    const pageData = allProxies.slice(start, end);
+    const pageData = sortedProxies.slice(start, end);
     
     document.getElementById('selectAll').checked = false;
+    updateProxySortHeaders();
     renderProxyTable(pageData);
 }
 
@@ -220,7 +315,7 @@ function renderProxyTable(proxies) {
     const tbody = document.getElementById('proxyTableBody');
 
     if (!proxies || proxies.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state"><div class="icon">🔍</div><p>暂无代理数据，请先抓取代理</p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-state"><div class="icon">🔍</div><p>暂无代理数据，请先抓取代理</p></td></tr>';
         return;
     }
 
