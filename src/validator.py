@@ -204,3 +204,67 @@ def run_validate(target_proxies: Optional[List[Dict]] = None) -> Dict:
         return future.result()
     else:
         return asyncio.run(async_run_validate(target_proxies))
+
+async def async_validate_and_add(new_proxies: List[Dict]) -> Dict:
+    storage = get_storage()
+
+    try:
+        concurrency_str = await asyncio.to_thread(storage.get_setting, "max_concurrency")
+        concurrency = int(concurrency_str) if concurrency_str else MAX_VALIDATE_CONCURRENCY
+    except Exception:
+        concurrency = MAX_VALIDATE_CONCURRENCY
+
+    try:
+        validate_url = await asyncio.to_thread(storage.get_setting, "validate_url") or VALIDATE_URL
+    except Exception:
+        validate_url = VALIDATE_URL
+
+    try:
+        timeout_str = await asyncio.to_thread(storage.get_setting, "validate_timeout")
+        timeout = int(timeout_str) if timeout_str else VALIDATE_TIMEOUT
+    except Exception:
+        timeout = VALIDATE_TIMEOUT
+
+    logger.info("=" * 60)
+    logger.info("[BATCH-ADD] Starting instant validation for %d new proxies", len(new_proxies))
+    logger.info("=" * 60)
+
+    valid_count = 0
+    invalid_count = 0
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    semaphore = asyncio.Semaphore(concurrency)
+    tasks = [_validate_single(p, validate_url, timeout, semaphore) for p in new_proxies]
+    
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        
+        ip = result["ip"]
+        port = result["port"]
+        protocol = result["protocol"]
+
+        if result["valid"]:
+            valid_count += 1
+            proxy_data = {
+                "ip": ip,
+                "port": port,
+                "protocol": protocol,
+                "country": result["country"],
+                "latency": result["latency"],
+                "score": result["score"],
+                "last_check": now,
+                "added_time": now,
+            }
+            # Insert if not exists
+            await asyncio.to_thread(storage.add_proxy, proxy_data)
+            # Update metrics in case it already existed
+            await asyncio.to_thread(storage.update_proxy, proxy_data)
+        else:
+            invalid_count += 1
+
+    logger.info("[BATCH-ADD] COMPLETE. Valid: %d, Invalid: %d", valid_count, invalid_count)
+    return {
+        "total": len(new_proxies),
+        "valid": valid_count,
+        "invalid": invalid_count
+    }

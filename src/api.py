@@ -162,6 +162,15 @@ def api_add_proxy(proxy: ProxyIn):
     return {"success": ok}
 
 
+@router.post("/batch-add")
+async def api_batch_add(body: ProxyBatchIn):
+    """Batch add proxies, instantly validate them, and only save valid ones."""
+    from .validator import async_validate_and_add
+    
+    result = await async_validate_and_add(body.proxies)
+    return {"success": True, "data": result}
+
+
 @router.delete("/proxy")
 def api_delete_proxy(
     ip: str = Query(...),

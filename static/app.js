@@ -427,25 +427,65 @@ async function batchValidate() {
 }
 
 async function addProxy() {
-    const ip = document.getElementById('addProxyIp').value.trim();
-    const port = parseInt(document.getElementById('addProxyPort').value);
+    const listText = document.getElementById('addProxyList').value.trim();
     const protocol = document.getElementById('addProxyProtocol').value;
 
-    if (!ip || !port) {
-        toast('请填写 IP 和端口', 'error');
+    if (!listText) {
+        toast('请填写代理列表', 'error');
         return;
     }
 
+    const lines = listText.split('\n').map(l => l.trim()).filter(l => l);
+    const proxies = [];
+    for (const line of lines) {
+        let ip = '';
+        let port = 0;
+        let pcol = protocol;
+        
+        let cleanedLine = line;
+        if (cleanedLine.includes('://')) {
+            const parts = cleanedLine.split('://');
+            pcol = parts[0].toLowerCase();
+            cleanedLine = parts[1];
+        }
+        
+        const parts = cleanedLine.split(':');
+        if (parts.length >= 2) {
+            port = parseInt(parts[parts.length - 1]);
+            ip = parts.slice(0, parts.length - 1).join(':');
+            if (!isNaN(port) && ip) {
+                proxies.push({ ip, port, protocol: pcol });
+            }
+        }
+    }
+
+    if (proxies.length === 0) {
+        toast('没有解析到有效的代理，请检查格式', 'error');
+        return;
+    }
+
+    const btn = document.querySelector('#addProxyModal .btn-primary');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 验证并添加中...';
+
     try {
-        await apiPost('/proxy', { ip, port, protocol });
-        toast('代理添加成功', 'success');
-        closeModal('addProxyModal');
-        document.getElementById('addProxyIp').value = '';
-        document.getElementById('addProxyPort').value = '';
-        loadProxies();
-        loadStats();
+        const result = await apiPost('/batch-add', { proxies });
+        if (result.success) {
+            const data = result.data;
+            toast(`完成: 成功 ${data.valid} 个，失败 ${data.invalid} 个`, 'success');
+            closeModal('addProxyModal');
+            document.getElementById('addProxyList').value = '';
+            loadProxies();
+            loadStats();
+        } else {
+            toast('添加失败: ' + (result.message || '未知错误'), 'error');
+        }
     } catch (e) {
-        toast('添加失败: ' + e.message, 'error');
+        toast('添加请求失败: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
 
