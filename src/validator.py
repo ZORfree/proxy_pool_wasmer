@@ -19,7 +19,7 @@ import aiohttp
 from aiohttp_socks import ProxyConnector
 
 from .storage import get_storage
-from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
+from .config import VALIDATE_URL, VALIDATE_TIMEOUT, VALIDATE_FALLBACK_URLS, MAX_VALIDATE_CONCURRENCY
 from .score import calculate_risk_score
 from .proxy_url import build_proxy_url
 
@@ -40,6 +40,20 @@ async def _request_via_proxy(proxy_url: str, target_url: str, timeout: int) -> O
                     return await resp.json()
     except Exception:
         return None
+
+def _candidate_validate_urls(primary_url: str) -> List[str]:
+    urls = []
+    for url in [primary_url, *VALIDATE_FALLBACK_URLS]:
+        if url and url not in urls:
+            urls.append(url)
+    return urls
+
+async def _request_with_fallback(proxy_url: str, primary_url: str, timeout: int) -> Optional[Dict]:
+    for target_url in _candidate_validate_urls(primary_url):
+        data = await _request_via_proxy(proxy_url, target_url, timeout)
+        if data is not None:
+            return data
+    return None
 
 async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semaphore: asyncio.Semaphore) -> Dict:
     async with semaphore:
@@ -62,7 +76,7 @@ async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semapho
 
         try:
             start = time.monotonic()
-            data = await _request_via_proxy(proxy_url, validate_url, timeout)
+            data = await _request_with_fallback(proxy_url, validate_url, timeout)
             elapsed = (time.monotonic() - start) * 1000
 
             if data is not None:

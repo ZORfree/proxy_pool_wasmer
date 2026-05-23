@@ -52,6 +52,7 @@ docker run -d -p 8000:8000 -v $(pwd)/data:/data proxy-pool
 | `DB_USERNAME` | MySQL 用户名 | `root` |
 | `DB_PASSWORD` | MySQL 密码 | - |
 | `DB_NAME` | MySQL 数据库名 | `proxy_pool` |
+| `VALIDATE_FALLBACK_URLS` | 主验证 URL 失败时的备用 JSON 验证地址，多个用英文逗号分隔 | `https://api.ipify.org?format=json` |
 
 ## 🛠️ API 接口说明
 

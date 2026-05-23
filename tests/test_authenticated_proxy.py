@@ -100,6 +100,84 @@ class AuthenticatedProxyTests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(["http://alice:secret@1.2.3.4:8080"], captured_urls)
 
+    def test_validate_single_uses_fallback_url_when_primary_fails(self):
+        captured_targets = []
+
+        async def fake_request(proxy_url, target_url, timeout):
+            captured_targets.append(target_url)
+            if target_url == "https://api.ipapi.is":
+                return None
+            return {"ip": "1.2.3.4"}
+
+        original_request = validator._request_via_proxy
+        original_fallbacks = getattr(validator, "VALIDATE_FALLBACK_URLS", None)
+        validator._request_via_proxy = fake_request
+        validator.VALIDATE_FALLBACK_URLS = ("https://api.ipify.org?format=json",)
+        try:
+            result = asyncio.run(validator._validate_single(
+                {
+                    "ip": "1.2.3.4",
+                    "port": 8080,
+                    "protocol": "socks5",
+                    "username": "alice",
+                    "password": "secret",
+                },
+                "https://api.ipapi.is",
+                5,
+                asyncio.Semaphore(1),
+            ))
+        finally:
+            validator._request_via_proxy = original_request
+            if original_fallbacks is None:
+                delattr(validator, "VALIDATE_FALLBACK_URLS")
+            else:
+                validator.VALIDATE_FALLBACK_URLS = original_fallbacks
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(
+            ["https://api.ipapi.is", "https://api.ipify.org?format=json"],
+            captured_targets,
+        )
+
+    def test_fetch_validate_proxy_uses_fallback_url_when_primary_fails(self):
+        captured_targets = []
+
+        async def fake_request(proxy_url, target_url, timeout):
+            captured_targets.append(target_url)
+            if target_url == "https://api.ipapi.is":
+                return None
+            return {"ip": "1.2.3.4"}
+
+        original_request = fetcher._request_via_proxy
+        original_fallbacks = getattr(fetcher, "VALIDATE_FALLBACK_URLS", None)
+        fetcher._request_via_proxy = fake_request
+        fetcher.VALIDATE_FALLBACK_URLS = ("https://api.ipify.org?format=json",)
+        try:
+            result = asyncio.run(fetcher._validate_proxy(
+                {
+                    "ip": "1.2.3.4",
+                    "port": 8080,
+                    "protocol": "socks5",
+                    "username": "alice",
+                    "password": "secret",
+                },
+                "https://api.ipapi.is",
+                5,
+                asyncio.Semaphore(1),
+            ))
+        finally:
+            fetcher._request_via_proxy = original_request
+            if original_fallbacks is None:
+                delattr(fetcher, "VALIDATE_FALLBACK_URLS")
+            else:
+                fetcher.VALIDATE_FALLBACK_URLS = original_fallbacks
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(
+            ["https://api.ipapi.is", "https://api.ipify.org?format=json"],
+            captured_targets,
+        )
+
     def test_api_filters_and_simple_output_include_auth(self):
         storage = make_memory_storage()
         storage_module._storage_instance = storage

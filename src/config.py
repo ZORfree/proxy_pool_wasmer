@@ -25,6 +25,11 @@ else:
 # --- Validation ---
 VALIDATE_URL = os.getenv("VALIDATE_URL", "https://api.ipapi.is")
 VALIDATE_TIMEOUT = int(os.getenv("VALIDATE_TIMEOUT", "10"))  # seconds
+VALIDATE_FALLBACK_URLS = [
+    url.strip()
+    for url in os.getenv("VALIDATE_FALLBACK_URLS", "https://api.ipify.org?format=json").split(",")
+    if url.strip()
+]
 MAX_VALIDATE_CONCURRENCY = int(os.getenv("MAX_VALIDATE_CONCURRENCY", "20"))
 
 # --- Scoring ---
