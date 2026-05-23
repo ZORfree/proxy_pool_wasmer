@@ -16,6 +16,16 @@ def proxy_has_auth(proxy: Dict[str, Any]) -> bool:
     return bool(str(proxy.get("username") or "") and str(proxy.get("password") or ""))
 
 
+def proxy_identity_key(proxy: Dict[str, Any]) -> tuple:
+    return (
+        str(proxy.get("ip") or proxy.get("host") or ""),
+        int(proxy["port"]),
+        clean_protocol(proxy.get("protocol")),
+        str(proxy.get("username") or ""),
+        str(proxy.get("password") or ""),
+    )
+
+
 def build_proxy_url(proxy: Dict[str, Any]) -> str:
     protocol = clean_protocol(proxy.get("protocol"))
     host = str(proxy.get("ip") or proxy.get("host") or "")

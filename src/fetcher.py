@@ -18,7 +18,7 @@ from aiohttp_socks import ProxyConnector
 from .storage import get_storage
 from .config import VALIDATE_URL, VALIDATE_TIMEOUT, VALIDATE_FALLBACK_URLS, MAX_VALIDATE_CONCURRENCY
 from .score import calculate_risk_score
-from .proxy_url import build_proxy_url, parse_proxy_line
+from .proxy_url import build_proxy_url, parse_proxy_line, proxy_identity_key
 
 logger = logging.getLogger("proxy_pool.fetcher")
 
@@ -27,6 +27,9 @@ BUILTIN_SOURCES = []
 IP_PORT_PATTERN = re.compile(
     r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{2,5})"
 )
+
+def _proxy_identity_key(proxy: Dict) -> tuple:
+    return proxy_identity_key(proxy)
 
 def _detect_protocol_from_url(url: str) -> str:
     url_lower = url.lower()
@@ -236,7 +239,7 @@ async def async_run_fetch() -> Dict:
         for source_proxies in results:
             if isinstance(source_proxies, list):
                 for p in source_proxies:
-                    key = (p["ip"], p["port"], p["protocol"])
+                    key = _proxy_identity_key(p)
                     if key not in seen_keys:
                         seen_keys.add(key)
                         raw_proxies.append(p)

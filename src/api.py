@@ -176,10 +176,12 @@ def api_delete_proxy(
     ip: str = Query(...),
     port: int = Query(...),
     protocol: str = Query("http"),
+    username: str = Query(""),
+    password: str = Query(""),
 ):
     """Delete a proxy."""
     storage = get_storage()
-    storage.delete_proxy(ip, port, protocol)
+    storage.delete_proxy(ip, port, protocol, username, password)
     return {"success": True}
 
 
@@ -189,7 +191,13 @@ def api_batch_delete(body: ProxyBatchIn):
     storage = get_storage()
     count = 0
     for p in body.proxies:
-        if storage.delete_proxy(p['ip'], p['port'], p.get('protocol', 'http')):
+        if storage.delete_proxy(
+            p['ip'],
+            p['port'],
+            p.get('protocol', 'http'),
+            p.get('username', ''),
+            p.get('password', ''),
+        ):
             count += 1
     return {"success": True, "count": count}
 

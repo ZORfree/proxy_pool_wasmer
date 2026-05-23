@@ -14,7 +14,7 @@ from .config import (
     USE_MYSQL, DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD,
     INITIAL_SCORE, MAX_SCORE, MIN_SCORE, SCORE_INCREMENT, SCORE_DECREMENT,
 )
-from .proxy_url import proxy_has_auth
+from .proxy_url import proxy_has_auth, proxy_identity_key
 
 logger = logging.getLogger("proxy_pool.storage")
 
@@ -106,7 +106,7 @@ class Storage:
                         source      VARCHAR(256) DEFAULT '',
                         username    VARCHAR(256) DEFAULT '',
                         `password`  VARCHAR(256) DEFAULT '',
-                        UNIQUE KEY uq_proxy (ip, port, protocol)
+                        UNIQUE KEY uq_proxy (ip, port, protocol, username, `password`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 """)
                 cur.execute("""
@@ -144,7 +144,7 @@ class Storage:
                         source      VARCHAR(256) DEFAULT '',
                         username    VARCHAR(256) DEFAULT '',
                         `password`  VARCHAR(256) DEFAULT '',
-                        UNIQUE (ip, port, protocol)
+                        UNIQUE (ip, port, protocol, username, `password`)
                     );
                 """)
                 cur.execute("""
@@ -182,6 +182,8 @@ class Storage:
             except Exception:
                 pass
 
+            self._migrate_proxy_unique_key(cur)
+
             try:
                 cur.execute("ALTER TABLE sources ADD COLUMN protocol VARCHAR(16) DEFAULT 'auto'")
                 cur.execute("ALTER TABLE sources ADD COLUMN delimiter VARCHAR(16) DEFAULT 'newline'")
@@ -195,6 +197,69 @@ class Storage:
                     (k, v),
                 )
         logger.info("Database tables initialized.")
+
+    def _migrate_proxy_unique_key(self, cur) -> None:
+        if self.is_mysql:
+            try:
+                cur.execute("ALTER TABLE proxies DROP INDEX uq_proxy")
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    "ALTER TABLE proxies ADD UNIQUE KEY uq_proxy "
+                    "(ip, port, protocol, username, `password`)"
+                )
+            except Exception:
+                pass
+            return
+
+        try:
+            cur.execute("PRAGMA index_list(proxies)")
+            indexes = cur.fetchall() or []
+            for index in indexes:
+                index_info = dict(index)
+                if not index_info.get("unique"):
+                    continue
+                index_name = index_info.get("name")
+                cur.execute(f"PRAGMA index_info({index_name})")
+                columns = [dict(row)["name"] for row in cur.fetchall() or []]
+                if columns == ["ip", "port", "protocol"]:
+                    self._rebuild_sqlite_proxy_table(cur)
+                    return
+        except Exception as exc:
+            logger.debug("proxy unique key migration skipped: %s", exc)
+
+    def _rebuild_sqlite_proxy_table(self, cur) -> None:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS proxies_new (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip          VARCHAR(64)  NOT NULL,
+                port        INTEGER      NOT NULL,
+                protocol    VARCHAR(16)  NOT NULL DEFAULT 'http',
+                anonymous   TINYINT      NOT NULL DEFAULT 0,
+                country     VARCHAR(8)   DEFAULT '',
+                latency     FLOAT        DEFAULT -1,
+                score       INTEGER      DEFAULT 50,
+                last_check  VARCHAR(32)  DEFAULT '',
+                added_time  VARCHAR(32)  DEFAULT '',
+                source      VARCHAR(256) DEFAULT '',
+                username    VARCHAR(256) DEFAULT '',
+                `password`  VARCHAR(256) DEFAULT '',
+                UNIQUE (ip, port, protocol, username, `password`)
+            );
+        """)
+        cur.execute("""
+            INSERT OR IGNORE INTO proxies_new
+                (id, ip, port, protocol, anonymous, country, latency, score,
+                 last_check, added_time, source, username, `password`)
+            SELECT
+                id, ip, port, protocol, anonymous, country, latency, score,
+                last_check, added_time, source,
+                COALESCE(username, ''), COALESCE(`password`, '')
+            FROM proxies;
+        """)
+        cur.execute("DROP TABLE proxies")
+        cur.execute("ALTER TABLE proxies_new RENAME TO proxies")
 
     def close(self):
         if self._conn:
@@ -229,17 +294,6 @@ class Storage:
                         password,
                     ),
                 )
-                if username or password:
-                    cur.execute(
-                        f"""UPDATE proxies SET username={self.ph}, `password`={self.ph}
-                           WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}""",
-                        (
-                            username,
-                            password,
-                            proxy["ip"], proxy["port"],
-                            proxy.get("protocol", "http"),
-                        ),
-                    )
             return True
         except Exception as exc:
             logger.debug("add_proxy error: %s", exc)
@@ -268,19 +322,30 @@ class Storage:
                     str(proxy.get("password") or ""),
                 ])
 
-            values.extend([proxy["ip"], proxy["port"], proxy.get("protocol", "http")])
+            ip, port, protocol, username, password = proxy_identity_key(proxy)
+            values.extend([ip, port, protocol, username, password])
             cur.execute(
                 f"""UPDATE proxies SET {", ".join(sets)}
-                   WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}""",
+                   WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}
+                     AND username={self.ph} AND `password`={self.ph}""",
                 values,
             )
         return True
 
-    def delete_proxy(self, ip: str, port: int, protocol: str = "http") -> bool:
+    def delete_proxy(
+        self,
+        ip: str,
+        port: int,
+        protocol: str = "http",
+        username: str = "",
+        password: str = "",
+    ) -> bool:
         with self._get_cursor() as cur:
             cur.execute(
-                f"DELETE FROM proxies WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}",
-                (ip, port, protocol),
+                f"""DELETE FROM proxies
+                   WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}
+                     AND username={self.ph} AND `password`={self.ph}""",
+                (ip, port, protocol, username or "", password or ""),
             )
         return True
 
@@ -320,20 +385,38 @@ class Storage:
                 return dict(row)["cnt"]
             return 0
 
-    def decrease_score(self, ip: str, port: int, protocol: str) -> None:
+    def decrease_score(
+        self,
+        ip: str,
+        port: int,
+        protocol: str,
+        username: str = "",
+        password: str = "",
+    ) -> None:
         func = "GREATEST" if self.is_mysql else "MAX"
         with self._get_cursor() as cur:
             cur.execute(
-                f"UPDATE proxies SET score = {func}(score - {self.ph}, {self.ph}) WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}",
-                (SCORE_DECREMENT, MIN_SCORE, ip, port, protocol),
+                f"""UPDATE proxies SET score = {func}(score - {self.ph}, {self.ph})
+                   WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}
+                     AND username={self.ph} AND `password`={self.ph}""",
+                (SCORE_DECREMENT, MIN_SCORE, ip, port, protocol, username or "", password or ""),
             )
 
-    def increase_score(self, ip: str, port: int, protocol: str) -> None:
+    def increase_score(
+        self,
+        ip: str,
+        port: int,
+        protocol: str,
+        username: str = "",
+        password: str = "",
+    ) -> None:
         func = "LEAST" if self.is_mysql else "MIN"
         with self._get_cursor() as cur:
             cur.execute(
-                f"UPDATE proxies SET score = {func}(score + {self.ph}, {self.ph}) WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}",
-                (SCORE_INCREMENT, MAX_SCORE, ip, port, protocol),
+                f"""UPDATE proxies SET score = {func}(score + {self.ph}, {self.ph})
+                   WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}
+                     AND username={self.ph} AND `password`={self.ph}""",
+                (SCORE_INCREMENT, MAX_SCORE, ip, port, protocol, username or "", password or ""),
             )
 
     def remove_low_score(self) -> int:

@@ -170,17 +170,19 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
         ip = result["ip"]
         port = result["port"]
         protocol = result["protocol"]
+        username = result.get("username", "")
+        password = result.get("password", "")
 
         try:
             if result["valid"]:
                 valid_count += 1
-                await asyncio.to_thread(storage.increase_score, ip, port, protocol)
+                await asyncio.to_thread(storage.increase_score, ip, port, protocol, username, password)
                 await asyncio.to_thread(storage.update_proxy, {
                     "ip": ip,
                     "port": port,
                     "protocol": protocol,
-                    "username": result.get("username", ""),
-                    "password": result.get("password", ""),
+                    "username": username,
+                    "password": password,
                     "country": result["country"],
                     "latency": result["latency"],
                     "score": result["score"],
@@ -188,7 +190,7 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
                 })
             else:
                 invalid_count += 1
-                await asyncio.to_thread(storage.delete_proxy, ip, port, protocol)
+                await asyncio.to_thread(storage.delete_proxy, ip, port, protocol, username, password)
         except Exception as exc:
             logger.warning("[RE-VALIDATE] DB exception: %s", exc)
 

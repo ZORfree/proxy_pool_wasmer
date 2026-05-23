@@ -422,7 +422,7 @@ function renderProxyTable(proxies) {
             <td style="font-size:0.75rem;">${p.last_check || '—'}</td>
             <td style="font-size:0.75rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${p.source || ''}">${p.source || '—'}</td>
             <td>
-                <button class="btn btn-sm btn-danger" onclick="deleteProxy('${p.ip}',${p.port},'${p.protocol}')">删除</button>
+                <button class="btn btn-sm btn-danger" data-ip="${escapeAttr(p.ip)}" data-port="${escapeAttr(p.port)}" data-protocol="${escapeAttr(proto)}" data-username="${escapeAttr(p.username || '')}" data-password="${escapeAttr(p.password || '')}" onclick="deleteProxyFromButton(this)">删除</button>
             </td>
         </tr>`;
     }).join('');
@@ -537,16 +537,33 @@ async function addProxy() {
     }
 }
 
-async function deleteProxy(ip, port, protocol) {
+async function deleteProxy(ip, port, protocol, username = '', password = '') {
     if (!confirm(`确认删除 ${ip}:${port} ?`)) return;
     try {
-        await apiDelete(`/proxy?ip=${ip}&port=${port}&protocol=${protocol}`);
+        const qs = new URLSearchParams({
+            ip,
+            port,
+            protocol,
+            username,
+            password,
+        });
+        await apiDelete(`/proxy?${qs.toString()}`);
         toast('已删除', 'success');
         loadProxies();
         loadStats();
     } catch (e) {
         toast('删除失败', 'error');
     }
+}
+
+function deleteProxyFromButton(button) {
+    deleteProxy(
+        button.dataset.ip,
+        button.dataset.port,
+        button.dataset.protocol,
+        button.dataset.username || '',
+        button.dataset.password || '',
+    );
 }
 
 function exportProxies() {

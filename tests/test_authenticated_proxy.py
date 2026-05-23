@@ -46,7 +46,54 @@ class AuthenticatedProxyTests(unittest.TestCase):
         self.assertEqual(["5.6.7.8"], [p["ip"] for p in without_auth])
         self.assertFalse(without_auth[0]["has_auth"])
 
-    def test_add_proxy_upgrades_existing_endpoint_with_auth(self):
+    def test_sqlite_init_migrates_legacy_unique_key(self):
+        storage = Storage()
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.isolation_level = None
+        storage._conn = conn
+        self.addCleanup(storage.close)
+
+        conn.execute("""
+            CREATE TABLE proxies (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip          VARCHAR(64)  NOT NULL,
+                port        INTEGER      NOT NULL,
+                protocol    VARCHAR(16)  NOT NULL DEFAULT 'http',
+                anonymous   TINYINT      NOT NULL DEFAULT 0,
+                country     VARCHAR(8)   DEFAULT '',
+                latency     FLOAT        DEFAULT -1,
+                score       INTEGER      DEFAULT 50,
+                last_check  VARCHAR(32)  DEFAULT '',
+                added_time  VARCHAR(32)  DEFAULT '',
+                source      VARCHAR(256) DEFAULT '',
+                UNIQUE (ip, port, protocol)
+            );
+        """)
+        conn.execute(
+            "INSERT INTO proxies (ip, port, protocol) VALUES (?, ?, ?)",
+            ("1.2.3.4", 8080, "http"),
+        )
+
+        storage.init()
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "alice",
+            "password": "secret",
+        })
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "bob",
+            "password": "secret",
+        })
+
+        self.assertEqual(3, len(storage.get_all()))
+
+    def test_add_proxy_keeps_distinct_credentials_for_same_endpoint(self):
         storage = make_memory_storage(self)
         storage.add_proxy({"ip": "1.2.3.4", "port": 8080, "protocol": "http"})
         storage.add_proxy({
@@ -56,12 +103,24 @@ class AuthenticatedProxyTests(unittest.TestCase):
             "username": "alice",
             "password": "secret",
         })
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "bob",
+            "password": "secret",
+        })
 
-        proxies = storage.get_all({"has_auth": True})
+        proxies = storage.get_all()
+        identities = {
+            (p["ip"], p["port"], p["protocol"], p["username"], p["password"])
+            for p in proxies
+        }
 
-        self.assertEqual(1, len(proxies))
-        self.assertEqual("alice", proxies[0]["username"])
-        self.assertEqual("secret", proxies[0]["password"])
+        self.assertEqual(3, len(proxies))
+        self.assertIn(("1.2.3.4", 8080, "http", "", ""), identities)
+        self.assertIn(("1.2.3.4", 8080, "http", "alice", "secret"), identities)
+        self.assertIn(("1.2.3.4", 8080, "http", "bob", "secret"), identities)
 
     def test_extract_proxies_keeps_url_auth(self):
         proxies = fetcher._extract_proxies(
@@ -71,6 +130,90 @@ class AuthenticatedProxyTests(unittest.TestCase):
 
         self.assertIn(("1.2.3.4", 8080, "http", "alice", "secret"), proxies)
         self.assertIn(("5.6.7.8", 1080, "socks5", "bob", "s3cr3t"), proxies)
+
+    def test_fetch_dedupe_keeps_distinct_credentials_for_same_endpoint(self):
+        seen_keys = set()
+        raw_proxies = []
+        source_proxies = [
+            {
+                "ip": "1.2.3.4",
+                "port": 8080,
+                "protocol": "http",
+                "username": "alice",
+                "password": "secret",
+            },
+            {
+                "ip": "1.2.3.4",
+                "port": 8080,
+                "protocol": "http",
+                "username": "bob",
+                "password": "secret",
+            },
+        ]
+
+        for proxy in source_proxies:
+            key = fetcher._proxy_identity_key(proxy)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                raw_proxies.append(proxy)
+
+        self.assertEqual(2, len(raw_proxies))
+
+    def test_update_proxy_targets_matching_credentials_only(self):
+        storage = make_memory_storage(self)
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "alice",
+            "password": "secret",
+            "latency": 100,
+        })
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "bob",
+            "password": "secret",
+            "latency": 200,
+        })
+
+        storage.update_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "alice",
+            "password": "secret",
+            "latency": 50,
+            "score": 10,
+        })
+
+        by_user = {p["username"]: p for p in storage.get_all()}
+        self.assertEqual(50, by_user["alice"]["latency"])
+        self.assertEqual(200, by_user["bob"]["latency"])
+
+    def test_delete_proxy_targets_matching_credentials_only(self):
+        storage = make_memory_storage(self)
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "alice",
+            "password": "secret",
+        })
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "bob",
+            "password": "secret",
+        })
+
+        storage.delete_proxy("1.2.3.4", 8080, "http", "alice", "secret")
+
+        proxies = storage.get_all()
+        self.assertEqual(1, len(proxies))
+        self.assertEqual("bob", proxies[0]["username"])
 
     def test_validate_single_builds_authenticated_proxy_url(self):
         captured_urls = []
@@ -203,6 +346,43 @@ class AuthenticatedProxyTests(unittest.TestCase):
         self.assertEqual(["5.6.7.8"], [p["ip"] for p in without_auth])
         self.assertEqual("http://alice:secret@1.2.3.4:8080", simple)
         self.assertEqual({"count": 1}, count)
+
+    def test_api_delete_targets_matching_credentials_only(self):
+        storage = make_memory_storage()
+        storage_module._storage_instance = storage
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "alice",
+            "password": "secret",
+        })
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "username": "bob",
+            "password": "secret",
+        })
+
+        try:
+            with TestClient(app) as client:
+                response = client.delete(
+                    "/api/proxy",
+                    params={
+                        "ip": "1.2.3.4",
+                        "port": 8080,
+                        "protocol": "http",
+                        "username": "alice",
+                        "password": "secret",
+                    },
+                )
+                remaining = client.get("/api/all?has_auth=true").json()
+        finally:
+            storage_module._storage_instance = None
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(["bob"], [p["username"] for p in remaining])
 
 
 if __name__ == "__main__":
