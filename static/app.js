@@ -73,6 +73,62 @@ async function apiDelete(path) {
     return resp.json();
 }
 
+function decodeUrlPart(value) {
+    try {
+        return decodeURIComponent(value || '');
+    } catch (e) {
+        return value || '';
+    }
+}
+
+function escapeAttr(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[ch]));
+}
+
+function proxyHasAuth(proxy) {
+    return Boolean((proxy.username || '') && (proxy.password || ''));
+}
+
+function formatProxyUrl(proxy) {
+    const proto = (proxy.protocol || 'http').toLowerCase();
+    const username = proxy.username || '';
+    const password = proxy.password || '';
+    const auth = (username || password)
+        ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
+        : '';
+    return `${proto}://${auth}${proxy.ip}:${proxy.port}`;
+}
+
+function parseProxyInputLine(line, defaultProtocol) {
+    const raw = line.trim();
+    if (!raw) return null;
+
+    const urlText = raw.includes('://') ? raw : `${defaultProtocol}://${raw}`;
+    try {
+        const url = new URL(urlText);
+        const protocol = url.protocol.replace(':', '').toLowerCase();
+        const port = parseInt(url.port, 10);
+        const ip = url.hostname.replace(/^\[|\]$/g, '');
+        if (!ip || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+        if (!['http', 'https', 'socks4', 'socks5'].includes(protocol)) return null;
+        return {
+            ip,
+            port,
+            protocol,
+            username: decodeUrlPart(url.username),
+            password: decodeUrlPart(url.password),
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
 // =========================================================================
 // Overview / Stats
 // =========================================================================
@@ -232,12 +288,14 @@ async function loadProxies() {
     const country = document.getElementById('filterCountry').value.trim();
     const maxLatency = document.getElementById('filterMaxLatency').value;
     const maxScore = document.getElementById('filterMaxScore').value;
+    const hasAuth = document.getElementById('filterHasAuth').value;
 
     let qs = [];
-    if (protocol) qs.push(`protocol=${protocol}`);
-    if (country) qs.push(`country=${country}`);
-    if (maxLatency) qs.push(`max_latency=${maxLatency}`);
-    if (maxScore) qs.push(`max_score=${maxScore}`);
+    if (protocol) qs.push(`protocol=${encodeURIComponent(protocol)}`);
+    if (country) qs.push(`country=${encodeURIComponent(country)}`);
+    if (maxLatency) qs.push(`max_latency=${encodeURIComponent(maxLatency)}`);
+    if (maxScore) qs.push(`max_score=${encodeURIComponent(maxScore)}`);
+    if (hasAuth) qs.push(`has_auth=${encodeURIComponent(hasAuth)}`);
     const query = qs.length ? '?' + qs.join('&') : '';
 
     try {
@@ -248,7 +306,7 @@ async function loadProxies() {
     } catch (e) {
         console.error('loadProxies error:', e);
         document.getElementById('proxyTableBody').innerHTML =
-            '<tr><td colspan="11" class="empty-state"><p>加载失败</p></td></tr>';
+            '<tr><td colspan="12" class="empty-state"><p>加载失败</p></td></tr>';
     }
 }
 
@@ -315,13 +373,17 @@ function renderProxyTable(proxies) {
     const tbody = document.getElementById('proxyTableBody');
 
     if (!proxies || proxies.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="empty-state"><div class="icon">🔍</div><p>暂无代理数据，请先抓取代理</p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="empty-state"><div class="icon">🔍</div><p>暂无代理数据，请先抓取代理</p></td></tr>';
         return;
     }
 
     tbody.innerHTML = proxies.map(p => {
         const proto = (p.protocol || 'http').toLowerCase();
         const badgeClass = `badge-${proto}`;
+        const hasAuth = p.has_auth !== undefined ? Boolean(p.has_auth) : proxyHasAuth(p);
+        const authBadge = hasAuth
+            ? '<span class="badge badge-https">有</span>'
+            : '<span class="badge badge-socks4">无</span>';
         const score = p.score || 0;
         const latency = p.latency >= 0 ? `${Math.round(p.latency)}ms` : '—';
         const latencyColor = p.latency < 0 ? '' :
@@ -348,10 +410,11 @@ function renderProxyTable(proxies) {
         }
 
         return `<tr>
-            <td><input type="checkbox" class="proxy-checkbox" data-ip="${p.ip}" data-port="${p.port}" data-protocol="${proto}"></td>
+            <td><input type="checkbox" class="proxy-checkbox" data-ip="${escapeAttr(p.ip)}" data-port="${escapeAttr(p.port)}" data-protocol="${escapeAttr(proto)}" data-username="${escapeAttr(p.username || '')}" data-password="${escapeAttr(p.password || '')}"></td>
             <td style="color:var(--text-primary);font-weight:500;font-family:monospace;">${p.ip}</td>
             <td style="font-family:monospace;">${p.port}</td>
             <td><span class="badge ${badgeClass}">${proto.toUpperCase()}</span></td>
+            <td>${authBadge}</td>
             <td>${p.country ? `<span class="badge badge-country">${p.country}</span>` : '—'}</td>
             <td style="${latencyColor}">${latency}</td>
             <td><span class="badge" style="${scoreStyle}">${scoreText}</span></td>
@@ -375,7 +438,9 @@ function getSelectedProxies() {
         selected.push({
             ip: cb.dataset.ip,
             port: parseInt(cb.dataset.port),
-            protocol: cb.dataset.protocol
+            protocol: cb.dataset.protocol,
+            username: cb.dataset.username || '',
+            password: cb.dataset.password || '',
         });
     });
     return selected;
@@ -438,25 +503,8 @@ async function addProxy() {
     const lines = listText.split('\n').map(l => l.trim()).filter(l => l);
     const proxies = [];
     for (const line of lines) {
-        let ip = '';
-        let port = 0;
-        let pcol = protocol;
-        
-        let cleanedLine = line;
-        if (cleanedLine.includes('://')) {
-            const parts = cleanedLine.split('://');
-            pcol = parts[0].toLowerCase();
-            cleanedLine = parts[1];
-        }
-        
-        const parts = cleanedLine.split(':');
-        if (parts.length >= 2) {
-            port = parseInt(parts[parts.length - 1]);
-            ip = parts.slice(0, parts.length - 1).join(':');
-            if (!isNaN(port) && ip) {
-                proxies.push({ ip, port, protocol: pcol });
-            }
-        }
+        const proxy = parseProxyInputLine(line, protocol);
+        if (proxy) proxies.push(proxy);
     }
 
     if (proxies.length === 0) {
@@ -508,7 +556,7 @@ function exportProxies() {
     if (selected.length > 0) {
         // Export selected only
         selected.forEach(p => {
-            lines.push(`${p.protocol}://${p.ip}:${p.port}`);
+            lines.push(formatProxyUrl(p));
         });
     } else {
         // Export all on current page
@@ -519,7 +567,9 @@ function exportProxies() {
                 const ip = cb.dataset.ip;
                 const port = cb.dataset.port;
                 const proto = cb.dataset.protocol;
-                lines.push(`${proto}://${ip}:${port}`);
+                const username = cb.dataset.username || '';
+                const password = cb.dataset.password || '';
+                lines.push(formatProxyUrl({ ip, port, protocol: proto, username, password }));
             }
         });
     }

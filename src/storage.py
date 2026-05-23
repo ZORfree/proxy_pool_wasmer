@@ -14,6 +14,7 @@ from .config import (
     USE_MYSQL, DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD,
     INITIAL_SCORE, MAX_SCORE, MIN_SCORE, SCORE_INCREMENT, SCORE_DECREMENT,
 )
+from .proxy_url import proxy_has_auth
 
 logger = logging.getLogger("proxy_pool.storage")
 
@@ -103,6 +104,8 @@ class Storage:
                         last_check  VARCHAR(32)  DEFAULT '',
                         added_time  VARCHAR(32)  DEFAULT '',
                         source      VARCHAR(256) DEFAULT '',
+                        username    VARCHAR(256) DEFAULT '',
+                        `password`  VARCHAR(256) DEFAULT '',
                         UNIQUE KEY uq_proxy (ip, port, protocol)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 """)
@@ -139,6 +142,8 @@ class Storage:
                         last_check  VARCHAR(32)  DEFAULT '',
                         added_time  VARCHAR(32)  DEFAULT '',
                         source      VARCHAR(256) DEFAULT '',
+                        username    VARCHAR(256) DEFAULT '',
+                        `password`  VARCHAR(256) DEFAULT '',
                         UNIQUE (ip, port, protocol)
                     );
                 """)
@@ -168,6 +173,16 @@ class Storage:
                 pass  # Ignore if column already exists
 
             try:
+                cur.execute("ALTER TABLE proxies ADD COLUMN username VARCHAR(256) DEFAULT ''")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("ALTER TABLE proxies ADD COLUMN `password` VARCHAR(256) DEFAULT ''")
+            except Exception:
+                pass
+
+            try:
                 cur.execute("ALTER TABLE sources ADD COLUMN protocol VARCHAR(16) DEFAULT 'auto'")
                 cur.execute("ALTER TABLE sources ADD COLUMN delimiter VARCHAR(16) DEFAULT 'newline'")
             except Exception:
@@ -191,12 +206,15 @@ class Storage:
 
     def add_proxy(self, proxy: Dict[str, Any]) -> bool:
         try:
+            username = str(proxy.get("username") or "")
+            password = str(proxy.get("password") or "")
             with self._get_cursor() as cur:
                 cur.execute(
                     f"""INSERT {self.ignore} INTO proxies
                        (ip, port, protocol, anonymous, country,
-                        latency, score, last_check, added_time, source)
-                       VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph})""",
+                        latency, score, last_check, added_time, source,
+                        username, `password`)
+                       VALUES ({self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph},{self.ph})""",
                     (
                         proxy["ip"], proxy["port"],
                         proxy.get("protocol", "http"),
@@ -207,8 +225,21 @@ class Storage:
                         proxy.get("last_check", ""),
                         proxy.get("added_time", ""),
                         proxy.get("source", ""),
+                        username,
+                        password,
                     ),
                 )
+                if username or password:
+                    cur.execute(
+                        f"""UPDATE proxies SET username={self.ph}, `password`={self.ph}
+                           WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}""",
+                        (
+                            username,
+                            password,
+                            proxy["ip"], proxy["port"],
+                            proxy.get("protocol", "http"),
+                        ),
+                    )
             return True
         except Exception as exc:
             logger.debug("add_proxy error: %s", exc)
@@ -216,20 +247,32 @@ class Storage:
 
     def update_proxy(self, proxy: Dict[str, Any]) -> bool:
         with self._get_cursor() as cur:
+            sets = [
+                f"anonymous={self.ph}",
+                f"country={self.ph}",
+                f"latency={self.ph}",
+                f"score={self.ph}",
+                f"last_check={self.ph}",
+            ]
+            values = [
+                proxy.get("anonymous", 0),
+                proxy.get("country", ""),
+                proxy.get("latency", -1),
+                proxy.get("score", 0),
+                proxy.get("last_check", ""),
+            ]
+            if "username" in proxy or "password" in proxy:
+                sets.extend([f"username={self.ph}", f"`password`={self.ph}"])
+                values.extend([
+                    str(proxy.get("username") or ""),
+                    str(proxy.get("password") or ""),
+                ])
+
+            values.extend([proxy["ip"], proxy["port"], proxy.get("protocol", "http")])
             cur.execute(
-                f"""UPDATE proxies SET
-                    anonymous={self.ph}, country={self.ph},
-                    latency={self.ph}, score={self.ph}, last_check={self.ph}
+                f"""UPDATE proxies SET {", ".join(sets)}
                    WHERE ip={self.ph} AND port={self.ph} AND protocol={self.ph}""",
-                (
-                    proxy.get("anonymous", 0),
-                    proxy.get("country", ""),
-                    proxy.get("latency", -1),
-                    proxy.get("score", 0),
-                    proxy.get("last_check", ""),
-                    proxy["ip"], proxy["port"],
-                    proxy.get("protocol", "http"),
-                ),
+                values,
             )
         return True
 
@@ -241,6 +284,13 @@ class Storage:
             )
         return True
 
+    def _row_to_proxy(self, row) -> Dict[str, Any]:
+        proxy = dict(row)
+        proxy.setdefault("username", "")
+        proxy.setdefault("password", "")
+        proxy["has_auth"] = proxy_has_auth(proxy)
+        return proxy
+
     def get_random(self, filters: Optional[Dict] = None) -> Optional[Dict]:
         where, params = self._build_filter_clause(filters)
         rand_func = "RAND()" if self.is_mysql else "RANDOM()"
@@ -249,7 +299,7 @@ class Storage:
                 f"SELECT * FROM proxies {where} ORDER BY {rand_func} LIMIT 1", params
             )
             row = cur.fetchone()
-            return dict(row) if row else None
+            return self._row_to_proxy(row) if row else None
 
     def get_all(self, filters: Optional[Dict] = None) -> List[Dict]:
         where, params = self._build_filter_clause(filters)
@@ -259,7 +309,7 @@ class Storage:
                 params,
             )
             rows = cur.fetchall()
-            return [dict(r) for r in rows] if rows else []
+            return [self._row_to_proxy(r) for r in rows] if rows else []
 
     def get_count(self, filters: Optional[Dict] = None) -> int:
         where, params = self._build_filter_clause(filters)
@@ -407,6 +457,12 @@ class Storage:
             elif key == "anonymous" and val is not None:
                 clauses.append(f"anonymous = {self.ph}")
                 params.append(1 if val else 0)
+            elif key == "has_auth" and val is not None:
+                wants_auth = val if isinstance(val, bool) else str(val).lower() in ("1", "true", "yes", "on")
+                if wants_auth:
+                    clauses.append("(username != '' AND `password` != '')")
+                else:
+                    clauses.append("(username = '' OR `password` = '')")
             elif key == "protocol" and val:
                 clauses.append(f"protocol = {self.ph}")
                 params.append(str(val).lower())

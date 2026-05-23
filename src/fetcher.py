@@ -18,6 +18,7 @@ from aiohttp_socks import ProxyConnector
 from .storage import get_storage
 from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
 from .score import calculate_risk_score
+from .proxy_url import build_proxy_url, parse_proxy_line
 
 logger = logging.getLogger("proxy_pool.fetcher")
 
@@ -47,7 +48,7 @@ async def _fetch_url(session: aiohttp.ClientSession, url: str, timeout: int = 15
         logger.warning("[HTTP] GET %s failed: %s", url, exc)
         return ""
 
-def _extract_proxies(text: str, pattern: str = "", protocol: str = "auto", delimiter: str = "newline") -> Set[Tuple[str, int, str]]:
+def _extract_proxies(text: str, pattern: str = "", protocol: str = "auto", delimiter: str = "newline") -> Set[Tuple[str, int, str, str, str]]:
     results = set()
     regex = re.compile(pattern) if pattern else IP_PORT_PATTERN
     pieces = text.split(',') if delimiter == "comma" else text.splitlines()
@@ -56,6 +57,18 @@ def _extract_proxies(text: str, pattern: str = "", protocol: str = "auto", delim
         piece = piece.strip()
         if not piece:
             continue
+
+        parsed = parse_proxy_line(piece, protocol)
+        if parsed:
+            results.add((
+                parsed["ip"],
+                parsed["port"],
+                parsed["protocol"],
+                parsed.get("username", ""),
+                parsed.get("password", ""),
+            ))
+            continue
+
         p_proto = protocol
         if protocol == "auto":
             piece_lower = piece.lower()
@@ -71,12 +84,15 @@ def _extract_proxies(text: str, pattern: str = "", protocol: str = "auto", delim
         for match in regex.finditer(piece):
             ip = match.group(1)
             port_str = match.group(2)
+            groups = match.groupdict()
+            username = groups.get("username") or groups.get("user") or ""
+            password = groups.get("password") or groups.get("pass") or ""
             try:
                 port = int(port_str)
                 if 1 <= port <= 65535:
                     parts = ip.split(".")
                     if all(0 <= int(p) <= 255 for p in parts):
-                        results.add((ip, port, p_proto))
+                        results.add((ip, port, p_proto, username, password))
             except (ValueError, IndexError):
                 continue
     return results
@@ -102,12 +118,14 @@ async def _validate_proxy(proxy: Dict, validate_url: str, timeout: int, semaphor
         ip = proxy["ip"]
         port = proxy["port"]
         protocol = proxy.get("protocol", "http")
-        proxy_url = f"{protocol}://{ip}:{port}"
+        proxy_url = build_proxy_url(proxy)
 
         result = {
             "ip": ip,
             "port": port,
             "protocol": protocol,
+            "username": proxy.get("username", ""),
+            "password": proxy.get("password", ""),
             "source": proxy.get("source", ""),
             "valid": False,
             "country": "",
@@ -140,11 +158,13 @@ async def _fetch_single_source(session: aiohttp.ClientSession, name: str, url: s
         text = await _fetch_url(session, url)
         if text:
             triples = _extract_proxies(text, pattern, protocol, delimiter)
-            for ip, port, p_proto in triples:
+            for ip, port, p_proto, username, password in triples:
                 proxies.append({
                     "ip": ip,
                     "port": port,
                     "protocol": p_proto,
+                    "username": username,
+                    "password": password,
                     "source": name,
                 })
             logger.info("[FETCH]   Result: %d raw proxies extracted from [%s]", len(proxies), name)
@@ -240,6 +260,8 @@ async def async_run_fetch() -> Dict:
                 "ip": vp["ip"],
                 "port": vp["port"],
                 "protocol": vp["protocol"],
+                "username": vp.get("username", ""),
+                "password": vp.get("password", ""),
                 "country": vp["country"],
                 "latency": vp["latency"],
                 "source": vp["source"],

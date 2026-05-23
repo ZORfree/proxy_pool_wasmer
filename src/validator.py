@@ -21,6 +21,7 @@ from aiohttp_socks import ProxyConnector
 from .storage import get_storage
 from .config import VALIDATE_URL, VALIDATE_TIMEOUT, MAX_VALIDATE_CONCURRENCY
 from .score import calculate_risk_score
+from .proxy_url import build_proxy_url
 
 logger = logging.getLogger("proxy_pool.validator")
 
@@ -45,12 +46,14 @@ async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semapho
         ip = proxy["ip"]
         port = proxy["port"]
         protocol = proxy.get("protocol", "http")
-        proxy_url = f"{protocol}://{ip}:{port}"
+        proxy_url = build_proxy_url(proxy)
 
         result = {
             "ip": ip,
             "port": port,
             "protocol": protocol,
+            "username": proxy.get("username", ""),
+            "password": proxy.get("password", ""),
             "valid": False,
             "country": proxy.get("country", ""),
             "latency": -1,
@@ -162,6 +165,8 @@ async def async_run_validate(target_proxies: Optional[List[Dict]] = None) -> Dic
                     "ip": ip,
                     "port": port,
                     "protocol": protocol,
+                    "username": result.get("username", ""),
+                    "password": result.get("password", ""),
                     "country": result["country"],
                     "latency": result["latency"],
                     "score": result["score"],
@@ -249,6 +254,8 @@ async def async_validate_and_add(new_proxies: List[Dict]) -> Dict:
                 "ip": ip,
                 "port": port,
                 "protocol": protocol,
+                "username": result.get("username", ""),
+                "password": result.get("password", ""),
                 "country": result["country"],
                 "latency": result["latency"],
                 "score": result["score"],

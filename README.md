@@ -15,6 +15,7 @@
     -   **代理管理**：支持单选、多选、全选，以及一键批量验证和批量删除。
     -   **动态配置**：无需重启即可修改验证 URL、超时时间、并发数等设置。
 -   **多协议支持**：支持 HTTP、HTTPS、SOCKS4 和 SOCKS5 代理。
+-   **认证代理支持**：支持 `protocol://username:password@host:port` 格式的 HTTP/SOCKS 代理，并可按是否包含认证信息筛选。
 
 ## 🚀 快速开始
 
@@ -57,10 +58,10 @@ docker run -d -p 8000:8000 -v $(pwd)/data:/data proxy-pool
 所有接口均以 `/api` 开头。
 
 ### 代理接口
--   `GET /api/all`: 获取所有代理。支持过滤：`protocol`, `country` (支持多个如 `US,CN`), `max_latency`。
+-   `GET /api/all`: 获取所有代理。支持过滤：`protocol`, `country` (支持多个如 `US,CN`), `max_latency`, `max_score`, `anonymous`, `has_auth`。
 -   `GET /api/random`: 获取一个随机可用代理。参数同上。
--   `GET /api/simple`: 获取纯文本格式（protocol://ip:port）的代理列表，便于与其他工具集成。参数同上。
--   `POST /api/proxy`: 手动添加单个代理。
+-   `GET /api/simple`: 获取纯文本格式（`protocol://ip:port` 或 `protocol://username:password@ip:port`）的代理列表，便于与其他工具集成。参数同上。
+-   `POST /api/proxy`: 手动添加单个代理，可传 `username` 与 `password`。
 -   `DELETE /api/proxy`: 删除指定代理（需提供 `ip`, `port`, `protocol`）。
 -   `POST /api/batch-delete`: 批量删除代理。请求体：`{"proxies": [{"ip": "...", "port": 0, "protocol": "..."}]}`。
 
