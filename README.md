@@ -59,7 +59,7 @@ docker run -d -p 8000:8000 -v $(pwd)/data:/data proxy-pool
 所有接口均以 `/api` 开头。
 
 ### 代理接口
--   `GET /api/all`: 获取所有代理。支持过滤：`protocol`, `country` (支持多个如 `US,CN`), `max_latency`, `max_score`, `anonymous`, `has_auth`。
+-   `GET /api/all`: 获取所有代理。支持过滤：`protocol`, `country` (支持多个如 `US,CN`), `source`, `max_latency`, `max_score`, `anonymous`, `has_auth`。
 -   `GET /api/random`: 获取一个随机可用代理。参数同上。
 -   `GET /api/simple`: 获取纯文本格式（`protocol://ip:port` 或 `protocol://username:password@ip:port`）的代理列表，便于与其他工具集成。参数同上。
 -   `POST /api/proxy`: 手动添加单个代理，可传 `username` 与 `password`。

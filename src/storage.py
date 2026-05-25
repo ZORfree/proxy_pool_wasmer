@@ -558,6 +558,9 @@ class Storage:
                     placeholders = ', '.join([self.ph] * len(countries))
                     clauses.append(f"country IN ({placeholders})")
                     params.extend(countries)
+            elif key == "source" and val:
+                clauses.append(f"source = {self.ph}")
+                params.append(str(val).strip())
         where = " AND ".join(clauses)
         return f"WHERE {where}" if where else "", params
 

@@ -347,6 +347,37 @@ class AuthenticatedProxyTests(unittest.TestCase):
         self.assertEqual("http://alice:secret@1.2.3.4:8080", simple)
         self.assertEqual({"count": 1}, count)
 
+    def test_api_filters_by_source_across_proxy_endpoints(self):
+        storage = make_memory_storage()
+        storage_module._storage_instance = storage
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "source": "手动",
+        })
+        storage.add_proxy({
+            "ip": "5.6.7.8",
+            "port": 3128,
+            "protocol": "http",
+            "source": "source-a",
+        })
+
+        try:
+            with TestClient(app) as client:
+                params = {"source": "手动"}
+                all_result = client.get("/api/all", params=params).json()
+                random_result = client.get("/api/random", params=params).json()
+                simple = client.get("/api/simple", params=params).text
+                count = client.get("/api/count", params=params).json()
+        finally:
+            storage_module._storage_instance = None
+
+        self.assertEqual(["1.2.3.4"], [p["ip"] for p in all_result])
+        self.assertEqual("1.2.3.4", random_result["ip"])
+        self.assertEqual("http://1.2.3.4:8080", simple)
+        self.assertEqual({"count": 1}, count)
+
     def test_api_delete_targets_matching_credentials_only(self):
         storage = make_memory_storage()
         storage_module._storage_instance = storage

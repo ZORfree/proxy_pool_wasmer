@@ -57,6 +57,7 @@ class SettingsIn(BaseModel):
 def _build_proxy_filters(
     protocol: Optional[str] = None,
     country: Optional[str] = None,
+    source: Optional[str] = None,
     max_latency: Optional[float] = None,
     max_score: Optional[int] = None,
     anonymous: Optional[bool] = None,
@@ -67,6 +68,8 @@ def _build_proxy_filters(
         filters["protocol"] = protocol
     if country:
         filters["country"] = country
+    if source and source.strip():
+        filters["source"] = source.strip()
     if max_latency is not None:
         filters["max_latency"] = max_latency
     if max_score is not None:
@@ -82,13 +85,22 @@ def _build_proxy_filters(
 def api_get_proxy(
     protocol: Optional[str] = Query(None, description="http / https / socks5"),
     country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
+    source: Optional[str] = Query(None, description="Proxy source name"),
     max_latency: Optional[float] = Query(None, description="Max latency in ms"),
     max_score: Optional[int] = Query(None, description="Max risk score"),
     anonymous: Optional[bool] = Query(None, description="Require anonymous"),
     has_auth: Optional[bool] = Query(None, description="Require proxy authentication info"),
 ):
     """Get a random proxy matching the filters."""
-    filters = _build_proxy_filters(protocol, country, max_latency, max_score, anonymous, has_auth)
+    filters = _build_proxy_filters(
+        protocol=protocol,
+        country=country,
+        source=source,
+        max_latency=max_latency,
+        max_score=max_score,
+        anonymous=anonymous,
+        has_auth=has_auth,
+    )
 
     storage = get_storage()
     proxy = storage.get_random(filters)
@@ -101,13 +113,22 @@ def api_get_proxy(
 def api_get_all(
     protocol: Optional[str] = Query(None),
     country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
+    source: Optional[str] = Query(None, description="Proxy source name"),
     max_latency: Optional[float] = Query(None),
     max_score: Optional[int] = Query(None),
     anonymous: Optional[bool] = Query(None),
     has_auth: Optional[bool] = Query(None),
 ):
     """Get all proxies matching the filters."""
-    filters = _build_proxy_filters(protocol, country, max_latency, max_score, anonymous, has_auth)
+    filters = _build_proxy_filters(
+        protocol=protocol,
+        country=country,
+        source=source,
+        max_latency=max_latency,
+        max_score=max_score,
+        anonymous=anonymous,
+        has_auth=has_auth,
+    )
 
     storage = get_storage()
     return storage.get_all(filters)
@@ -117,13 +138,22 @@ def api_get_all(
 def api_get_simple(
     protocol: Optional[str] = Query(None, description="http / https / socks5"),
     country: Optional[str] = Query(None, description="Country code, e.g. US,CN"),
+    source: Optional[str] = Query(None, description="Proxy source name"),
     max_latency: Optional[float] = Query(None, description="Max latency in ms"),
     max_score: Optional[int] = Query(None, description="Max risk score"),
     anonymous: Optional[bool] = Query(None, description="Require anonymous"),
     has_auth: Optional[bool] = Query(None, description="Require proxy authentication info"),
 ):
     """Get all proxies matching the filters in plain text format."""
-    filters = _build_proxy_filters(protocol, country, max_latency, max_score, anonymous, has_auth)
+    filters = _build_proxy_filters(
+        protocol=protocol,
+        country=country,
+        source=source,
+        max_latency=max_latency,
+        max_score=max_score,
+        anonymous=anonymous,
+        has_auth=has_auth,
+    )
 
     storage = get_storage()
     proxies = storage.get_all(filters)
@@ -135,13 +165,22 @@ def api_get_simple(
 def api_count(
     protocol: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
     max_latency: Optional[float] = Query(None),
     max_score: Optional[int] = Query(None),
     anonymous: Optional[bool] = Query(None),
     has_auth: Optional[bool] = Query(None),
 ):
     """Count proxies matching the filters."""
-    filters = _build_proxy_filters(protocol, country, max_latency, max_score, anonymous, has_auth)
+    filters = _build_proxy_filters(
+        protocol=protocol,
+        country=country,
+        source=source,
+        max_latency=max_latency,
+        max_score=max_score,
+        anonymous=anonymous,
+        has_auth=has_auth,
+    )
 
     storage = get_storage()
     return {"count": storage.get_count(filters)}

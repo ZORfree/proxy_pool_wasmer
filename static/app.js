@@ -286,6 +286,7 @@ function toggleProxySort(key) {
 async function loadProxies() {
     const protocol = document.getElementById('filterProtocol').value;
     const country = document.getElementById('filterCountry').value.trim();
+    const source = document.getElementById('filterSource').value.trim();
     const maxLatency = document.getElementById('filterMaxLatency').value;
     const maxScore = document.getElementById('filterMaxScore').value;
     const hasAuth = document.getElementById('filterHasAuth').value;
@@ -293,6 +294,7 @@ async function loadProxies() {
     let qs = [];
     if (protocol) qs.push(`protocol=${encodeURIComponent(protocol)}`);
     if (country) qs.push(`country=${encodeURIComponent(country)}`);
+    if (source) qs.push(`source=${encodeURIComponent(source)}`);
     if (maxLatency) qs.push(`max_latency=${encodeURIComponent(maxLatency)}`);
     if (maxScore) qs.push(`max_score=${encodeURIComponent(maxScore)}`);
     if (hasAuth) qs.push(`has_auth=${encodeURIComponent(hasAuth)}`);
