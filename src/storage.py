@@ -512,17 +512,30 @@ class Storage:
             proto_rows = cur.fetchall() or []
 
             cur.execute(
+                "SELECT source, protocol, COUNT(*) as cnt FROM proxies "
+                "GROUP BY source, protocol ORDER BY source ASC, cnt DESC"
+            )
+            source_protocol_rows = cur.fetchall() or []
+
+            cur.execute(
                 f"SELECT COUNT(*) as cnt FROM proxies WHERE score >= {self.ph}",
                 (INITIAL_SCORE,),
             )
             active_row = cur.fetchone()
             active = dict(active_row).get("cnt", 0) if active_row else 0
 
+        by_source_protocol: Dict[str, Dict[str, int]] = {}
+        for row in source_protocol_rows:
+            source = row["source"] or "—"
+            protocol = row["protocol"] or "unknown"
+            by_source_protocol.setdefault(source, {})[protocol] = row["cnt"]
+
         return {
             "total": total,
             "active": active,
             "by_country": {r["country"]: r["cnt"] for r in country_rows},
             "by_protocol": {r["protocol"]: r["cnt"] for r in proto_rows},
+            "by_source_protocol": by_source_protocol,
         }
 
     def _build_filter_clause(self, filters: Optional[Dict]) -> tuple:

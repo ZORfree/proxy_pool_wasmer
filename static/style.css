@@ -637,6 +637,59 @@ tbody tr:hover {
     gap: 0.5rem;
 }
 
+.source-distribution {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.source-row {
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 0.75rem;
+    background: rgba(255,255,255,0.02);
+}
+
+.source-row-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.source-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.source-total {
+    flex-shrink: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.source-protocols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.source-protocol-badge {
+    border-radius: 4px;
+    padding: 0.2rem 0.45rem;
+    background: rgba(99,102,241,0.15);
+    color: var(--accent-indigo);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
 .bar-row {
     display: flex;
     align-items: center;

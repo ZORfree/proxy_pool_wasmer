@@ -378,6 +378,39 @@ class AuthenticatedProxyTests(unittest.TestCase):
         self.assertEqual("http://1.2.3.4:8080", simple)
         self.assertEqual({"count": 1}, count)
 
+    def test_api_stats_groups_protocol_counts_by_source(self):
+        storage = make_memory_storage()
+        storage_module._storage_instance = storage
+        storage.add_proxy({
+            "ip": "1.2.3.4",
+            "port": 8080,
+            "protocol": "http",
+            "source": "手动",
+        })
+        storage.add_proxy({
+            "ip": "5.6.7.8",
+            "port": 1080,
+            "protocol": "socks5",
+            "source": "手动",
+        })
+        storage.add_proxy({
+            "ip": "9.9.9.9",
+            "port": 3128,
+            "protocol": "http",
+            "source": "source-a",
+        })
+
+        try:
+            with TestClient(app) as client:
+                stats = client.get("/api/stats").json()
+        finally:
+            storage_module._storage_instance = None
+
+        self.assertEqual({
+            "手动": {"http": 1, "socks5": 1},
+            "source-a": {"http": 1},
+        }, stats["by_source_protocol"])
+
     def test_api_delete_targets_matching_credentials_only(self):
         storage = make_memory_storage()
         storage_module._storage_instance = storage

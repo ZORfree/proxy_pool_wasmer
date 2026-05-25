@@ -147,12 +147,15 @@ async function loadStats() {
 
         const protos = stats.by_protocol || {};
         const countries = stats.by_country || {};
+        const sourceProtocols = stats.by_source_protocol || {};
 
         document.getElementById('statProtocols').textContent = Object.keys(protos).length;
         document.getElementById('statCountries').textContent = Object.keys(countries).length;
+        document.getElementById('statSources').textContent = Object.keys(sourceProtocols).length;
 
         renderBarChart('chartProtocol', protos);
         renderBarChart('chartCountry', countries, 10);
+        renderSourceProtocolDistribution('chartSourceProtocol', sourceProtocols, 12);
     } catch (e) {
         console.error('loadStats error:', e);
     }
@@ -178,6 +181,38 @@ function renderBarChart(containerId, data, limit) {
                 <div class="bar-track">
                     <div class="bar-fill" style="width:${pct}%;background:${color};">${count}</div>
                 </div>
+            </div>`;
+    }).join('');
+}
+
+function renderSourceProtocolDistribution(containerId, data, limit) {
+    const container = document.getElementById(containerId);
+    let entries = Object.entries(data).map(([source, protocolCounts]) => {
+        const counts = protocolCounts || {};
+        const total = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
+        return [source, counts, total];
+    }).sort((a, b) => b[2] - a[2]);
+    if (limit) entries = entries.slice(0, limit);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>暂无数据</p></div>';
+        return;
+    }
+
+    container.innerHTML = entries.map(([source, counts, total]) => {
+        const sourceLabel = source || '—';
+        const protocolBadges = Object.entries(counts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([protocol, count]) => `<span class="source-protocol-badge">${escapeAttr(protocol)}: ${count}</span>`)
+            .join('');
+
+        return `
+            <div class="source-row">
+                <div class="source-row-main">
+                    <div class="source-name" title="${escapeAttr(sourceLabel)}">${escapeAttr(sourceLabel)}</div>
+                    <div class="source-total">${total}</div>
+                </div>
+                <div class="source-protocols">${protocolBadges}</div>
             </div>`;
     }).join('');
 }
