@@ -158,7 +158,10 @@ def api_stats():
 def api_add_proxy(proxy: ProxyIn):
     """Manually add a proxy."""
     storage = get_storage()
-    ok = storage.add_proxy(proxy.model_dump())
+    proxy_data = proxy.model_dump()
+    if not proxy_data.get("source"):
+        proxy_data["source"] = "手动"
+    ok = storage.add_proxy(proxy_data)
     return {"success": ok}
 
 
@@ -264,12 +267,12 @@ def api_update_settings(body: SettingsIn):
 _fetch_lock = threading.Lock()
 _validate_lock = threading.Lock()
 
-def _run_fetch_task():
+def _run_fetch_task(source_id: Optional[int] = None):
     if not _fetch_lock.acquire(blocking=False):
         return
     try:
         from .fetcher import run_fetch
-        run_fetch()
+        run_fetch(source_id=source_id)
     except Exception as e:
         logger.error("Fetch task error: %s", e)
     finally:
@@ -293,6 +296,24 @@ def api_trigger_fetch(background_tasks: BackgroundTasks):
         return {"success": False, "message": "Fetch task is already running."}
     background_tasks.add_task(_run_fetch_task)
     return {"success": True, "message": "Fetch task started in background."}
+
+
+@router.get("/sources/{source_id}/fetch")
+def api_trigger_source_fetch(source_id: int, background_tasks: BackgroundTasks):
+    """Trigger proxy fetching for a single source in background."""
+    storage = get_storage()
+    source = next(
+        (s for s in storage.get_sources(active_only=False) if int(s["id"]) == source_id),
+        None,
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    if not source.get("status"):
+        return {"success": False, "message": "Source is disabled."}
+    if _fetch_lock.locked():
+        return {"success": False, "message": "Fetch task is already running."}
+    background_tasks.add_task(_run_fetch_task, source_id)
+    return {"success": True, "message": f"Fetch task started for source: {source.get('name') or source_id}."}
 
 
 @router.get("/check")

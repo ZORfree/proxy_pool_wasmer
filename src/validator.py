@@ -68,6 +68,7 @@ async def _validate_single(proxy: Dict, validate_url: str, timeout: int, semapho
             "protocol": protocol,
             "username": proxy.get("username", ""),
             "password": proxy.get("password", ""),
+            "source": proxy.get("source", ""),
             "valid": False,
             "country": proxy.get("country", ""),
             "latency": -1,
@@ -275,6 +276,7 @@ async def async_validate_and_add(new_proxies: List[Dict]) -> Dict:
                 "country": result["country"],
                 "latency": result["latency"],
                 "score": result["score"],
+                "source": result.get("source") or "手动",
                 "last_check": now,
                 "added_time": now,
             }

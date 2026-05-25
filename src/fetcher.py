@@ -189,7 +189,7 @@ async def _fetch_single_source(session: aiohttp.ClientSession, name: str, url: s
         logger.warning("[FETCH]   FAILED to fetch [%s]: %s", name, exc)
     return proxies
 
-async def async_run_fetch() -> Dict:
+async def async_run_fetch(source_id: Optional[int] = None) -> Dict:
     storage = get_storage()
     try:
         concurrency_str = storage.get_setting("max_concurrency")
@@ -213,13 +213,16 @@ async def async_run_fetch() -> Dict:
     logger.info("=" * 60)
 
     all_sources = []
-    for name, url, src_type, pattern in BUILTIN_SOURCES:
-        proto = _detect_protocol_from_url(url)
-        all_sources.append((name, url, src_type, pattern, proto, "newline"))
+    if source_id is None:
+        for name, url, src_type, pattern in BUILTIN_SOURCES:
+            proto = _detect_protocol_from_url(url)
+            all_sources.append((name, url, src_type, pattern, proto, "newline"))
 
     try:
         db_sources = await asyncio.to_thread(storage.get_sources, active_only=True)
         for s in db_sources:
+            if source_id is not None and int(s.get("id", 0)) != int(source_id):
+                continue
             all_sources.append((
                 s["name"], s["url"], s["type"], s.get("pattern", ""),
                 s.get("protocol", "auto"), s.get("delimiter", "newline")
@@ -299,7 +302,7 @@ async def async_run_fetch() -> Dict:
         "stored": stored_count,
     }
 
-def run_fetch() -> Dict:
+def run_fetch(source_id: Optional[int] = None) -> Dict:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -307,8 +310,8 @@ def run_fetch() -> Dict:
 
     if loop and loop.is_running():
         # Running in a thread with a running event loop (rare, but possible)
-        future = asyncio.run_coroutine_threadsafe(async_run_fetch(), loop)
+        future = asyncio.run_coroutine_threadsafe(async_run_fetch(source_id), loop)
         return future.result()
     else:
         # Normal case for background threads
-        return asyncio.run(async_run_fetch())
+        return asyncio.run(async_run_fetch(source_id))

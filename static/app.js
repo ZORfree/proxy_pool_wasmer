@@ -645,6 +645,7 @@ function renderSourceTable(sources) {
             <td>${protoBadge}</td>
             <td>${statusBadge}</td>
             <td>
+                <button class="btn btn-sm" ${s.status ? '' : 'disabled'} onclick="fetchSource(${s.id}, this)">抓取</button>
                 <button class="btn btn-sm" onclick="editSource(${s.id})">编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteSource(${s.id})">删除</button>
             </td>
@@ -727,6 +728,30 @@ async function deleteSource(id) {
         loadSources();
     } catch (e) {
         toast('删除失败', 'error');
+    }
+}
+
+async function fetchSource(id, button) {
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner"></span> 抓取中...';
+
+    try {
+        const result = await apiGet(`/sources/${id}/fetch`);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast('抓取失败: ' + (result.message || result.detail || '未知错误'), 'error');
+        }
+    } catch (e) {
+        toast('抓取请求失败: ' + e.message, 'error');
+    } finally {
+        setTimeout(() => {
+            button.disabled = false;
+            button.textContent = originalText;
+            loadStats();
+            loadProxies();
+        }, 3000);
     }
 }
 

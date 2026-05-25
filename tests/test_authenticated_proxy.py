@@ -384,6 +384,81 @@ class AuthenticatedProxyTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual(["bob"], [p["username"] for p in remaining])
 
+    def test_api_add_proxy_defaults_manual_source(self):
+        storage = make_memory_storage()
+        storage_module._storage_instance = storage
+
+        try:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/proxy",
+                    json={"ip": "1.2.3.4", "port": 8080, "protocol": "http"},
+                )
+                proxies = client.get("/api/all").json()
+        finally:
+            storage_module._storage_instance = None
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("手动", proxies[0]["source"])
+
+    def test_api_batch_add_defaults_manual_source(self):
+        storage = make_memory_storage()
+        storage_module._storage_instance = storage
+
+        async def fake_request(proxy_url, target_url, timeout):
+            return {"location": {"country_code": "US"}}
+
+        original_request = validator._request_via_proxy
+        validator._request_via_proxy = fake_request
+        try:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/batch-add",
+                    json={
+                        "proxies": [
+                            {"ip": "1.2.3.4", "port": 8080, "protocol": "http"}
+                        ]
+                    },
+                )
+                proxies = client.get("/api/all").json()
+        finally:
+            validator._request_via_proxy = original_request
+            storage_module._storage_instance = None
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("手动", proxies[0]["source"])
+
+    def test_api_fetch_single_source_passes_source_id_to_fetcher(self):
+        storage = make_memory_storage()
+        storage_module._storage_instance = storage
+        storage.add_source({
+            "name": "source-a",
+            "url": "https://example.test/a.txt",
+            "type": "api",
+            "protocol": "http",
+            "delimiter": "newline",
+            "status": 1,
+        })
+        source_id = storage.get_sources(active_only=False)[0]["id"]
+
+        captured_source_ids = []
+        original_run_fetch = fetcher.run_fetch
+
+        def fake_run_fetch(source_id=None):
+            captured_source_ids.append(source_id)
+            return {"sources_crawled": 1, "proxies_found": 0, "validated": 0, "stored": 0}
+
+        fetcher.run_fetch = fake_run_fetch
+        try:
+            with TestClient(app) as client:
+                response = client.get(f"/api/sources/{source_id}/fetch")
+        finally:
+            fetcher.run_fetch = original_run_fetch
+            storage_module._storage_instance = None
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual([source_id], captured_source_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
